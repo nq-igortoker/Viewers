@@ -276,6 +276,11 @@ window.config = {
     // Could use services manager here to bring up a dialog/modal if needed.
     console.warn('test, navigate to https://ohif.org/');
   },
+  // CreateReport Integration Configuration
+  createReport: {
+    baseUrl: 'http://localhost:3001', // Configure this to point to your CreateReport instance
+    selectedLanguage: 'en', // Default language: 'en', 'de', etc.
+  },
   // segmentation: {
   //   segmentLabel: {
   //     enabledByDefault: true,

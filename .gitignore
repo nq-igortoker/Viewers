@@ -49,17 +49,5 @@ platform/app/.recipes/Nginx-Dcm4Chee/logs/*
 platform/app/.recipes/OpenResty-Orthanc/logs/*
 .vercel
 
-.vs
-
-# PlayWright
-
-node_modules/
-tests/test-results/
-tests/playwright-report/
-/blob-report/
-/playwright/.cache/
-
-**/.claude/settings.local.json
-
-# Backup files
-*~
+# Uploads from mock server (for Issue #17 testing)
+uploads/

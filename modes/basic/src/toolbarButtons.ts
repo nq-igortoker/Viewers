@@ -632,6 +632,16 @@ const toolbarButtons: Button[] = [
     },
   },
   {
+    id: 'GenerateReport',
+    uiType: 'ohif.toolButton',
+    props: {
+      icon: 'tool-generate-report', // Custom "R" icon for Generate Report
+      label: 'Generate Report',
+      commands: 'generateReport',
+      evaluate: 'evaluate.action',
+    },
+  },
+  {
     id: 'Layout',
     uiType: 'ohif.layoutSelector',
     props: {

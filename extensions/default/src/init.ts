@@ -1,9 +1,11 @@
 import { DicomMetadataStore, classes } from '@ohif/core';
 import { calculateSUVScalingFactors } from '@cornerstonejs/calculate-suv';
+import { Icons } from '@ohif/ui-next';
 
 import getPTImageIdInstanceMetadata from './getPTImageIdInstanceMetadata';
 import { registerHangingProtocolAttributes } from './hangingprotocols';
 import { HotkeysManager } from '@ohif/core';
+import ReportIcon from './Components/ReportIcon';
 
 const metadataProvider = classes.MetadataProvider;
 
@@ -17,6 +19,9 @@ export default function init({
   commandsManager,
   hotkeysManager,
 }: withAppTypes): void {
+  // Register custom "R" icon for Generate Report button
+  Icons.addIcon('tool-generate-report', ReportIcon);
+
   const { toolbarService, cineService, viewportGridService } = servicesManager.services;
 
   toolbarService.registerEventForToolbarUpdate(cineService, [

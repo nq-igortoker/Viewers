@@ -24,6 +24,8 @@ import { useViewportsByPositionStore } from './stores/useViewportsByPositionStor
 import { useToggleOneUpViewportGridStore } from './stores/useToggleOneUpViewportGridStore';
 import requestDisplaySetCreationForStudy from './Panels/requestDisplaySetCreationForStudy';
 import promptSaveReport from './utils/promptSaveReport';
+import { exportViewportToJpg } from './utils/exportViewportToJpg';
+import { uploadToCreateReport } from './utils/uploadToCreateReport';
 
 export type HangingProtocolParams = {
   protocolId?: string;
@@ -224,6 +226,112 @@ const commandsModule = ({
       promptSaveReport({ servicesManager, commandsManager, extensionManager }, props, {
         data: { StudyInstanceUID },
       });
+    },
+
+    /**
+     * Generates a report by exporting the active viewport as JPG and uploading to CreateReport
+     */
+    generateReport: async () => {
+      const { viewportGridService, uiNotificationService } = servicesManager.services;
+
+      try {
+        // Get the active viewport ID
+        const { activeViewportId } = viewportGridService.getState();
+
+        if (!activeViewportId) {
+          uiNotificationService.show({
+            title: 'Generate Report',
+            message: 'No active viewport found. Please select a viewport first.',
+            type: 'error',
+            duration: 3000,
+          });
+          return;
+        }
+
+        // Show loading notification
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: 'Exporting viewport image...',
+          type: 'info',
+          duration: 2000,
+        });
+
+        // Export the viewport as JPG
+        const imageFile = await exportViewportToJpg(activeViewportId);
+
+        // Get CreateReport configuration
+        const config = window.config?.createReport;
+        console.log('CreateReport config:', config);
+        console.log('window.config:', window.config);
+
+        if (!config || !config.baseUrl) {
+          console.error('CreateReport config missing:', {
+            hasConfig: !!window.config,
+            hasCreateReport: !!window.config?.createReport,
+            baseUrl: config?.baseUrl,
+          });
+          uiNotificationService.show({
+            title: 'Generate Report',
+            message: 'CreateReport base URL is not configured. Please check your configuration.',
+            type: 'error',
+            duration: 5000,
+          });
+          return;
+        }
+
+        // Show uploading notification
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: 'Uploading to CreateReport...',
+          type: 'info',
+          duration: 2000,
+        });
+
+        // Upload to CreateReport
+        console.log('Starting upload to CreateReport:', {
+          baseUrl: config.baseUrl,
+          language: config.selectedLanguage,
+          fileSize: imageFile.size,
+          fileName: imageFile.name,
+        });
+
+        const response = await uploadToCreateReport(
+          [imageFile],
+          config.baseUrl,
+          config.selectedLanguage
+        );
+
+        console.log('CreateReport response:', {
+          status: response.status,
+          statusText: response.statusText,
+          ok: response.ok,
+        });
+
+        // Parse response to check for errors
+        let responseData;
+        try {
+          responseData = await response.json();
+          console.log('CreateReport response data:', responseData);
+        } catch (e) {
+          console.warn('Could not parse response as JSON:', e);
+        }
+
+        // Success notification
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: 'Report generation initiated successfully!',
+          type: 'success',
+          duration: 3000,
+        });
+      } catch (error) {
+        console.error('Generate Report error:', error);
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: error.message || 'Failed to generate report. Please try again.',
+          type: 'error',
+          duration: 5000,
+        });
+      }
     },
 
     /**
@@ -766,6 +874,7 @@ const commandsModule = ({
   const definitions = {
     multimonitor: actions.multimonitor,
     promptSaveReport: actions.promptSaveReport,
+    generateReport: actions.generateReport,
     loadStudy: actions.loadStudy,
     showContextMenu: actions.showContextMenu,
     closeContextMenu: actions.closeContextMenu,

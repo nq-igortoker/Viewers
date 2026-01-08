@@ -35,7 +35,7 @@ export async function uploadToCreateReport(
 
   // Create abort controller for timeout
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout (AI report generation takes time)
 
   // Build headers
   const headers: HeadersInit = {};
@@ -62,7 +62,7 @@ export async function uploadToCreateReport(
     clearTimeout(timeoutId);
 
     if (error.name === 'AbortError') {
-      throw new Error('Upload timed out after 60 seconds');
+      throw new Error('Request timed out after 5 minutes');
     }
 
     throw error;

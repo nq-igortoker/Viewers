@@ -26,6 +26,7 @@ import requestDisplaySetCreationForStudy from './Panels/requestDisplaySetCreatio
 import promptSaveReport from './utils/promptSaveReport';
 import { exportViewportToJpg } from './utils/exportViewportToJpg';
 import { uploadToCreateReport } from './utils/uploadToCreateReport';
+import { handoffToCreateReport } from './utils/handoffToCreateReport';
 
 export type HangingProtocolParams = {
   protocolId?: string;
@@ -230,24 +231,62 @@ const commandsModule = ({
 
     /**
      * Generates a report by exporting the active viewport as JPG and uploading to CreateReport
+     * Uses the Handoff flow to open CreateReport in a new tab and display the generated report
      */
     generateReport: async () => {
       const { viewportGridService, uiNotificationService } = servicesManager.services;
 
+      // Get CreateReport configuration FIRST (before any async operations)
+      const config = (window as any).config?.createReport;
+
+      if (!config || !config.baseUrl) {
+        console.error('CreateReport config missing:', {
+          hasConfig: !!(window as any).config,
+          hasCreateReport: !!(window as any).config?.createReport,
+          baseUrl: config?.baseUrl,
+        });
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: 'CreateReport base URL is not configured. Please check your configuration.',
+          type: 'error',
+          duration: 5000,
+        });
+        return;
+      }
+
+      // Get the active viewport ID
+      const { activeViewportId } = viewportGridService.getState();
+
+      if (!activeViewportId) {
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: 'No active viewport found. Please select a viewport first.',
+          type: 'error',
+          duration: 3000,
+        });
+        return;
+      }
+
+      // CRITICAL: Open CreateReport tab SYNCHRONOUSLY (before any await)
+      // This MUST be in the synchronous part of the click handler to avoid popup blockers
+      const crWindow = window.open(`${config.baseUrl}/handoff`, '_blank');
+
+      if (!crWindow) {
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: 'Popup was blocked. Please allow popups for this site and try again.',
+          type: 'error',
+          duration: 5000,
+        });
+        return;
+      }
+
+      // Validate API key
+      if (!config.apiKey) {
+        console.warn('CreateReport API key is not configured. Requests may fail if API requires authentication.');
+      }
+
       try {
-        // Get the active viewport ID
-        const { activeViewportId } = viewportGridService.getState();
-
-        if (!activeViewportId) {
-          uiNotificationService.show({
-            title: 'Generate Report',
-            message: 'No active viewport found. Please select a viewport first.',
-            type: 'error',
-            duration: 3000,
-          });
-          return;
-        }
-
         // Show loading notification
         uiNotificationService.show({
           title: 'Generate Report',
@@ -259,41 +298,7 @@ const commandsModule = ({
         // Export the viewport as JPG
         const imageFile = await exportViewportToJpg(activeViewportId);
 
-        // Get CreateReport configuration
-        const config = window.config?.createReport;
-        console.log('CreateReport config:', config);
-        console.log('window.config:', window.config);
-
-        if (!config || !config.baseUrl) {
-          console.error('CreateReport config missing:', {
-            hasConfig: !!window.config,
-            hasCreateReport: !!window.config?.createReport,
-            baseUrl: config?.baseUrl,
-          });
-          uiNotificationService.show({
-            title: 'Generate Report',
-            message: 'CreateReport base URL is not configured. Please check your configuration.',
-            type: 'error',
-            duration: 5000,
-          });
-          return;
-        }
-
-        // Validate API key if configured
-        if (!config.apiKey) {
-          console.warn('CreateReport API key is not configured. Requests may fail if API requires authentication.');
-        }
-
-        // Show uploading notification
-        uiNotificationService.show({
-          title: 'Generate Report',
-          message: 'Uploading to CreateReport...',
-          type: 'info',
-          duration: 2000,
-        });
-
-        // Upload to CreateReport
-        console.log('Starting upload to CreateReport:', {
+        console.log('Starting handoff to CreateReport:', {
           baseUrl: config.baseUrl,
           language: config.selectedLanguage,
           hasApiKey: !!config.apiKey,
@@ -301,40 +306,49 @@ const commandsModule = ({
           fileName: imageFile.name,
         });
 
-        const response = await uploadToCreateReport(
+        // Show uploading notification
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: 'Generating report... This may take a moment.',
+          type: 'info',
+          duration: 10000,
+        });
+
+        // Perform the handoff (upload + postMessage)
+        const result = await handoffToCreateReport(
           [imageFile],
           config.baseUrl,
-          config.selectedLanguage,
-          config.apiKey
+          config.selectedLanguage || 'en',
+          config.apiKey,
+          crWindow
         );
 
-        console.log('CreateReport response:', {
-          status: response.status,
-          statusText: response.statusText,
-          ok: response.ok,
-        });
-
-        // Parse response to check for errors
-        let responseData;
-        try {
-          responseData = await response.json();
-          console.log('CreateReport response data:', responseData);
-        } catch (e) {
-          console.warn('Could not parse response as JSON:', e);
+        if (result.success) {
+          console.log('Handoff successful:', result);
+          uiNotificationService.show({
+            title: 'Generate Report',
+            message: 'Report generated and sent to CreateReport!',
+            type: 'success',
+            duration: 3000,
+          });
+        } else {
+          console.error('Handoff failed:', result.error);
+          // Close the tab on failure
+          crWindow.close();
+          uiNotificationService.show({
+            title: 'Generate Report',
+            message: result.error || 'Failed to generate report. Please try again.',
+            type: 'error',
+            duration: 5000,
+          });
         }
-
-        // Success notification
-        uiNotificationService.show({
-          title: 'Generate Report',
-          message: 'Report generation initiated successfully!',
-          type: 'success',
-          duration: 3000,
-        });
       } catch (error) {
         console.error('Generate Report error:', error);
+        // Close the tab on error
+        crWindow.close();
         uiNotificationService.show({
           title: 'Generate Report',
-          message: error.message || 'Failed to generate report. Please try again.',
+          message: (error as Error).message || 'Failed to generate report. Please try again.',
           type: 'error',
           duration: 5000,
         });

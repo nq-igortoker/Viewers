@@ -36,7 +36,7 @@ Radiolog:innen öffnen eine Studie in einem echten Viewer (OHIF), erstellen/zeig
 
 - [x] **#16** - OHIF Setup: Local File Mode ✅ **ABGESCHLOSSEN**
 - [x] **#17** - OHIF Erweiterung: Generate Report Button + PNG/JPG Upload ✅ **ABGESCHLOSSEN** (2025-01-07) - **GETESTET & FUNKTIONSFÄHIG**
-- [ ] **#18** - CreateReport Handoff: Auto-Open + Login + Report anzeigen 🔄 **OFFEN**
+- [x] **#18** - CreateReport Handoff: Auto-Open + Login + Report anzeigen ✅ **ABGESCHLOSSEN** (2025-01-08) - **IMPLEMENTIERT**
 
 ---
 
@@ -124,50 +124,59 @@ yarn dev
 
 ---
 
-### Issue #18: CreateReport Handoff (Auto-Open + Login + Report anzeigen) 🔄
-**Status:** OPEN
+### Issue #18: CreateReport Handoff (Auto-Open + Login + Report anzeigen) ✅
+**Status:** CLOSED (OHIF-Seite implementiert)
 **Link:** [#18](https://github.com/nq-igortoker/CreateReport/issues/18)
 
 **Ziel:** CreateReport öffnet sich automatisch, Login erfolgt, Report wird angezeigt.
 
-#### Anforderungen
+#### Implementierung (OHIF-Seite) ✅
 
-- **Fenster öffnen:** CreateReport in neuem Tab/Fenster öffnen (von OHIF aus)
-- **Login:** bestehende fixed credentials verwenden (wie aktuell in der App)
-- **Report-Anzeige:** generierter Report wird automatisch angezeigt
-  - Option 1: via `window.postMessage` (OHIF → CreateReport)
-  - Option 2: via Redirect-Flow (URL-Parameter, Job-ID, oder ähnlich)
+**Gewählte Option:** Option C (Hybrid) - `postMessage` mit Report-Daten
 
-#### Tasks
+**Flow:**
+1. Button-Klick → `window.open('/handoff')` (synchron, vor async Operationen)
+2. Viewport als JPG exportieren
+3. API-Call an `/api/generate-report` (mit 5 Min Timeout für KI-Generierung)
+4. Warten auf `CR_READY` Message (optional, mit Timeout)
+5. Report via `postMessage(CR_HANDOFF_REPORT)` an CreateReport senden
 
-1. **CreateReport-Seite/Route vorbereiten**
-   - Endpoint/Route definieren, die Handoff-Parameter akzeptiert
-   - optional: Auto-Login mit fixed credentials
+**Implementierte Dateien:**
+- `extensions/default/src/utils/handoffToCreateReport.ts` (NEU)
+  - `waitForReady()` - Wartet auf CR_READY Message
+  - `uploadAndGenerateReport()` - API-Call mit Report-Rückgabe
+  - `sendReportToCreateReport()` - postMessage an CreateReport
+  - `handoffToCreateReport()` - Orchestriert gesamten Flow
+- `extensions/default/src/commandsModule.ts` (ANGEPASST)
+  - `generateReport` Command nutzt jetzt Handoff-Flow
 
-2. **Handoff-Mechanismus implementieren**
-   - **Option A (postMessage):** OHIF öffnet CreateReport-Tab, CreateReport wartet auf `postMessage` mit Report-Daten
-   - **Option B (Redirect/Query-Params):** OHIF sendet Images, CreateReport gibt Job-ID zurück, OHIF öffnet mit `?job=xxx`
-   - **Option C (Hybrid):** CreateReport API gibt Report direkt zurück, OHIF öffnet Tab, via `postMessage` werden Report-Daten übergeben
+**Message-Protokoll:**
+```typescript
+// CreateReport → OHIF (optional)
+{ type: 'CR_READY' }
 
-3. **Auto-Login (falls nötig)**
-   - Prüfen ob User eingeloggt ist
-   - Falls nicht: automatisch mit fixed credentials einloggen (für Demo)
+// OHIF → CreateReport
+{ type: 'CR_HANDOFF_REPORT', report: string, conversations?: array, selectedLanguage?: string }
+```
 
-4. **UX/Fehlerbehandlung**
-   - Loading-State während Report-Generierung
-   - Fehler-Handling (CreateReport nicht erreichbar, Login fehlschlägt, etc.)
-   - Pop-up Blocker Handling
+**Technische Details:**
+- Popup-Blocker: `window.open()` wird SYNCHRON im Click-Handler aufgerufen
+- Timeout: 5 Minuten für API-Call (KI-Befund-Generierung)
+- Origin-Validierung: postMessage nur an konfigurierte baseUrl
+- Fehlerbehandlung: Tab wird bei Fehler automatisch geschlossen
 
-#### Technische Überlegungen
+#### Akzeptanzkriterien (OHIF-Seite)
+- [x] Nach Button-Klick öffnet sich CreateReport in neuem Tab (`/handoff`)
+- [x] Viewport wird als JPG exportiert und an API gesendet
+- [x] Report wird via postMessage an CreateReport gesendet
+- [x] Popup-Blocker wird erkannt und User informiert
+- [x] Fehler werden sauber behandelt (Tab schließen, Toast anzeigen)
 
-- **CORS:** CreateReport API muss Requests von OHIF-Domain erlauben
-- **Auth:** Session/Token muss zwischen Tab-Fenstern geteilt werden (oder Auto-Login)
-- **State:** Report-State muss in CreateReport gesetzt werden (wie aktuell nach normalem Upload)
-
-#### Akzeptanzkriterien
-- [ ] Nach Button-Klick in OHIF öffnet sich CreateReport in neuem Tab
-- [ ] User ist eingeloggt (automatisch oder bereits)
-- [ ] Nach kurzer Verarbeitung wird der generierte Report automatisch angezeigt (ohne weitere Aktion)
+#### Voraussetzungen (CreateReport-Seite)
+- [ ] `/handoff` Route muss existieren
+- [ ] Route muss auf `CR_HANDOFF_REPORT` Message hören
+- [ ] Route muss Auto-Login durchführen
+- [ ] Route muss Report anzeigen
 
 ---
 
@@ -391,8 +400,34 @@ Unser Use Case:
 - Mock-Server für Testing ist sehr hilfreich und funktioniert einwandfrei
 
 **Nächste Schritte:**
-- Issue #17 manuell testen (Smoke Test)
-- Issue #18 angehen (CreateReport Handoff)
+- ~~Issue #17 manuell testen (Smoke Test)~~ ✅
+- ~~Issue #18 angehen (CreateReport Handoff)~~ ✅
+
+### 2025-01-08: Issue #18 Handoff-Flow implementiert ✅
+
+**Implementierung:**
+- **Handoff-Flow** komplett implementiert (OHIF-Seite)
+- **Neue Utility:** `handoffToCreateReport.ts` für postMessage-Kommunikation
+- **Command angepasst:** `generateReport` nutzt jetzt den Handoff-Flow
+- **Popup-Blocker:** `window.open()` wird SYNCHRON vor async Operationen aufgerufen
+- **Timeout erhöht:** 5 Minuten für KI-Befund-Generierung (statt 60s)
+
+**Implementierte Dateien:**
+- `extensions/default/src/utils/handoffToCreateReport.ts` (NEU)
+- `extensions/default/src/commandsModule.ts` (ANGEPASST)
+- `extensions/default/src/utils/uploadToCreateReport.ts` (Timeout erhöht)
+
+**Flow:**
+1. Button-Klick → `window.open('/handoff')` synchron öffnen
+2. Viewport als JPG exportieren
+3. API-Call an `/api/generate-report` (5 Min Timeout)
+4. Warten auf `CR_READY` Message (optional)
+5. Report via `postMessage(CR_HANDOFF_REPORT)` senden
+
+**Nächste Schritte:**
+- CreateReport: `/handoff` Route implementieren
+- CreateReport: postMessage-Listener für `CR_HANDOFF_REPORT`
+- CreateReport: Auto-Login und Report-Anzeige
 
 ### 2024-XX-XX: Initiale Analyse
 - Epic #10 analysiert

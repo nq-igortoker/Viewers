@@ -24,9 +24,14 @@ import { useViewportsByPositionStore } from './stores/useViewportsByPositionStor
 import { useToggleOneUpViewportGridStore } from './stores/useToggleOneUpViewportGridStore';
 import requestDisplaySetCreationForStudy from './Panels/requestDisplaySetCreationForStudy';
 import promptSaveReport from './utils/promptSaveReport';
-import { exportViewportToJpg } from './utils/exportViewportToJpg';
-import { uploadToCreateReport } from './utils/uploadToCreateReport';
-import { handoffToCreateReport } from './utils/handoffToCreateReport';
+import { exportViewportToImagePayload } from './utils/exportViewportToJpg';
+import {
+  openOrReuseCreateReportTab,
+  sendViewportImage,
+  canSendMore,
+  getImageCount,
+  getMaxImages,
+} from './utils/createReportIncrementalHandoff';
 
 export type HangingProtocolParams = {
   protocolId?: string;
@@ -230,8 +235,9 @@ const commandsModule = ({
     },
 
     /**
-     * Generates a report by exporting the active viewport as JPG and uploading to CreateReport
-     * Uses the Handoff flow to open CreateReport in a new tab and display the generated report
+     * Sends the active viewport image to CreateReport incrementally.
+     * Opens CreateReport tab on first click, then sends one image per click.
+     * Uses CR_ADD_IMAGE postMessage (no API call). User generates report manually in CreateReport.
      */
     generateReport: async () => {
       const { viewportGridService, uiNotificationService } = servicesManager.services;
@@ -254,6 +260,18 @@ const commandsModule = ({
         return;
       }
 
+      // Check if we've reached the image limit BEFORE opening tab
+      if (!canSendMore()) {
+        const maxImages = getMaxImages();
+        uiNotificationService.show({
+          title: 'Generate Report',
+          message: `Maximum ${maxImages} images reached. Please use the images in CreateReport.`,
+          type: 'warning',
+          duration: 5000,
+        });
+        return;
+      }
+
       // Get the active viewport ID
       const { activeViewportId } = viewportGridService.getState();
 
@@ -267,9 +285,9 @@ const commandsModule = ({
         return;
       }
 
-      // CRITICAL: Open CreateReport tab SYNCHRONOUSLY (before any await)
+      // CRITICAL: Open/reuse CreateReport tab SYNCHRONOUSLY (before any await)
       // This MUST be in the synchronous part of the click handler to avoid popup blockers
-      const crWindow = window.open(`${config.baseUrl}/handoff`, '_blank');
+      const crWindow = openOrReuseCreateReportTab(config.baseUrl);
 
       if (!crWindow) {
         uiNotificationService.show({
@@ -281,74 +299,41 @@ const commandsModule = ({
         return;
       }
 
-      // Validate API key
-      if (!config.apiKey) {
-        console.warn('CreateReport API key is not configured. Requests may fail if API requires authentication.');
-      }
-
       try {
-        // Show loading notification
-        uiNotificationService.show({
-          title: 'Generate Report',
-          message: 'Exporting viewport image...',
-          type: 'info',
-          duration: 2000,
-        });
+        // Export the viewport as PNG (ArrayBuffer for postMessage transfer)
+        const imagePayload = await exportViewportToImagePayload(activeViewportId, 'image/png');
 
-        // Export the viewport as JPG
-        const imageFile = await exportViewportToJpg(activeViewportId);
-
-        console.log('Starting handoff to CreateReport:', {
+        console.log('Sending image to CreateReport:', {
           baseUrl: config.baseUrl,
-          language: config.selectedLanguage,
-          hasApiKey: !!config.apiKey,
-          fileSize: imageFile.size,
-          fileName: imageFile.name,
+          fileName: imagePayload.fileName,
+          mimeType: imagePayload.mimeType,
+          size: imagePayload.arrayBuffer.byteLength,
         });
 
-        // Show uploading notification
-        uiNotificationService.show({
-          title: 'Generate Report',
-          message: 'Generating report... This may take a moment.',
-          type: 'info',
-          duration: 10000,
-        });
-
-        // Perform the handoff (upload + postMessage)
-        const result = await handoffToCreateReport(
-          [imageFile],
-          config.baseUrl,
-          config.selectedLanguage || 'en',
-          config.apiKey,
-          crWindow
-        );
+        // Send the image via postMessage
+        const result = await sendViewportImage(config.baseUrl, imagePayload);
 
         if (result.success) {
-          console.log('Handoff successful:', result);
+          const maxImages = getMaxImages();
           uiNotificationService.show({
             title: 'Generate Report',
-            message: 'Report generated and sent to CreateReport!',
+            message: `Image ${result.imageNumber}/${maxImages} sent to CreateReport`,
             type: 'success',
-            duration: 3000,
+            duration: 2000,
           });
         } else {
-          console.error('Handoff failed:', result.error);
-          // Close the tab on failure
-          crWindow.close();
           uiNotificationService.show({
             title: 'Generate Report',
-            message: result.error || 'Failed to generate report. Please try again.',
+            message: result.error || 'Failed to send image. Please try again.',
             type: 'error',
             duration: 5000,
           });
         }
       } catch (error) {
         console.error('Generate Report error:', error);
-        // Close the tab on error
-        crWindow.close();
         uiNotificationService.show({
           title: 'Generate Report',
-          message: (error as Error).message || 'Failed to generate report. Please try again.',
+          message: (error as Error).message || 'Failed to export viewport. Please try again.',
           type: 'error',
           duration: 5000,
         });

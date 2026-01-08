@@ -36,7 +36,9 @@ Radiolog:innen öffnen eine Studie in einem echten Viewer (OHIF), erstellen/zeig
 
 - [x] **#16** - OHIF Setup: Local File Mode ✅ **ABGESCHLOSSEN**
 - [x] **#17** - OHIF Erweiterung: Generate Report Button + PNG/JPG Upload ✅ **ABGESCHLOSSEN** (2025-01-07) - **GETESTET & FUNKTIONSFÄHIG**
-- [x] **#18** - CreateReport Handoff: Auto-Open + Login + Report anzeigen ✅ **ABGESCHLOSSEN** (2025-01-08) - **IMPLEMENTIERT**
+- [x] **#18** - CreateReport Handoff: Auto-Open + Login + Report anzeigen ✅ **ABGESCHLOSSEN** (2025-01-08) - **LEGACY** (ersetzt durch #21)
+- [x] **#20** - OHIF → CreateReport: Inkrementelles Key-Image Sammeln (CreateReport-Seite) 🟡 **IN PROGRESS**
+- [x] **#21** - OHIF: bestehenden Toolbar-Button wiederverwenden → inkrementell Key-Images senden ✅ **ABGESCHLOSSEN** (2026-01-08) - **IMPLEMENTIERT**
 
 ---
 
@@ -295,32 +297,28 @@ Unser Use Case:
 
 ## 🚀 Nächste Schritte
 
-### Sofort (Issue #17)
-1. [x] Extension-Point identifizieren (Toolbar/Commands) ✅
-2. [x] Toolbar-Button `Generate Report` implementieren ✅
-3. [x] Viewport-Export-Funktion (Canvas → PNG/JPG) ✅
-4. [x] FormData-Upload zu CreateReport API ✅
-5. [x] Konfiguration für CreateReport Base URL ✅
-6. [x] **Manueller Smoke Test** ✅ **ERFOLGREICH ABGESCHLOSSEN**
+### Issue #21 (OHIF → Inkrementeller Image-Handoff) ✅
+1. [x] Neue Utility für inkrementelles Senden (`createReportIncrementalHandoff.ts`) ✅
+2. [x] Viewport Export auf ArrayBuffer umstellen (`exportViewportToImagePayload`) ✅
+3. [x] Command `generateReport` auf neuen Flow umbauen ✅
+4. [x] Tab-Reuse + Max-10 Limit + Popup-Handling ✅
+5. [x] Dokumentation aktualisieren ✅
 
-### Danach (Issue #18)
-1. [ ] Handoff-Mechanismus implementieren (postMessage/Redirect)
-2. [ ] Auto-Login in CreateReport
-3. [ ] Report-Anzeige automatisch triggern
-4. [ ] CORS-Konfiguration
-5. [ ] Error-Handling und UX-Verbesserungen
+### CreateReport-Seite (Issue #20)
+1. [ ] `/handoff` Route: `CR_ADD_IMAGE` Message empfangen
+2. [ ] Bilder in Images-Liste anzeigen (wie manueller Upload)
+3. [ ] Origin-Whitelist: `ALLOWED_ORIGINS` konfigurieren
+4. [ ] Auto-Login für OHIF-Flow
+5. [ ] `CR_READY` Message bei Page-Load senden
 
-### Issue #19 (CreateReport API)
-1. [ ] API Endpoint `/api/generate-report` implementieren
-2. [ ] multipart/FormData Parsing für `images[]` Array
-3. [ ] Optionales `selectedLanguage` Feld verarbeiten
-4. [ ] CORS Headers setzen
-5. [ ] Success/Error Responses implementieren
+### Abgeschlossen (Legacy)
+- [x] **Issue #17:** Generate Report Button + Upload ✅
+- [x] **Issue #18:** Handoff-Flow (Legacy, ersetzt durch #21) ✅
 
 ### Demo-Vorbereitung
 1. [ ] Demo-Daten: 1–2 anonymisierte Demo-Studien (CT/MRT) definieren
 2. [ ] Dokumentation: Demo-Guide erstellen
-3. [ ] Troubleshooting: CORS, Pop-up Blocker, Größenlimits dokumentieren
+3. [ ] Troubleshooting: CORS, Pop-up Blocker, Origin-Whitelist dokumentieren
 
 ---
 
@@ -335,9 +333,10 @@ Unser Use Case:
 ## 🎯 Akzeptanzkriterien (Phase 1 - Gesamt)
 
 - [x] In OHIF kann eine lokale Demo-Study geöffnet werden ✅
-- [x] Ein Klick auf `Generate Report` sendet **1** Viewport-Image (aktuell aktiver) an CreateReport ✅ **GETESTET & FUNKTIONSFÄHIG**
-- [ ] CreateReport (Login wie bisher) zeigt danach automatisch den generierten Befund (Issue #18)
-- [ ] Der Flow ist dokumentiert und in <10 Minuten für Dritte reproduzierbar (nach Issue #18)
+- [x] Ein Klick auf `Generate Report` sendet **1** Viewport-Image (aktuell aktiver) an CreateReport ✅ **Issue #21 IMPLEMENTIERT**
+- [x] Mehrere Klicks senden Images inkrementell (max 10) ✅ **Issue #21 IMPLEMENTIERT**
+- [ ] CreateReport sammelt die Bilder und User generiert Report manuell (Issue #20)
+- [ ] Der Flow ist dokumentiert und in <10 Minuten für Dritte reproduzierbar
 
 ---
 
@@ -403,7 +402,9 @@ Unser Use Case:
 - ~~Issue #17 manuell testen (Smoke Test)~~ ✅
 - ~~Issue #18 angehen (CreateReport Handoff)~~ ✅
 
-### 2025-01-08: Issue #18 Handoff-Flow implementiert ✅
+### 2025-01-08: Issue #18 Handoff-Flow implementiert ✅ (Legacy)
+
+**Hinweis:** Dieser Flow wurde durch Issue #21 ersetzt (siehe unten).
 
 **Implementierung:**
 - **Handoff-Flow** komplett implementiert (OHIF-Seite)
@@ -413,21 +414,80 @@ Unser Use Case:
 - **Timeout erhöht:** 5 Minuten für KI-Befund-Generierung (statt 60s)
 
 **Implementierte Dateien:**
-- `extensions/default/src/utils/handoffToCreateReport.ts` (NEU)
+- `extensions/default/src/utils/handoffToCreateReport.ts` (NEU - jetzt LEGACY)
 - `extensions/default/src/commandsModule.ts` (ANGEPASST)
 - `extensions/default/src/utils/uploadToCreateReport.ts` (Timeout erhöht)
 
-**Flow:**
+**Flow (Legacy #18):**
 1. Button-Klick → `window.open('/handoff')` synchron öffnen
 2. Viewport als JPG exportieren
 3. API-Call an `/api/generate-report` (5 Min Timeout)
 4. Warten auf `CR_READY` Message (optional)
 5. Report via `postMessage(CR_HANDOFF_REPORT)` senden
 
+### 2026-01-08: Issue #21 Inkrementeller Image-Handoff implementiert ✅
+
+**Ziel:** Nachfolger von #18. Statt eines einzelnen API-Calls + Report-Generierung wird jetzt **pro Klick 1 Bild** an CreateReport gesendet. User generiert Report manuell in CreateReport.
+
+**Implementierung:**
+- **Neuer Flow:** `CR_ADD_IMAGE` postMessage (kein API-Call)
+- **Tab-Reuse:** Gleicher Tab bei wiederholten Klicks
+- **Limit:** Max 10 Bilder pro Session
+- **Neue Utility:** `createReportIncrementalHandoff.ts` für stateful Tab-Management und postMessage
+- **Viewport Export:** `exportViewportToImagePayload()` für ArrayBuffer-Transfer
+
+**Implementierte/Geänderte Dateien:**
+- `extensions/default/src/utils/createReportIncrementalHandoff.ts` (NEU)
+  - `setupCRReadyListener()` - Listener für CR_READY
+  - `openOrReuseCreateReportTab()` - Sync-freundliches Tab-Öffnen/Wiederverwenden
+  - `sendViewportImage()` - postMessage mit CR_ADD_IMAGE
+  - `canSendMore()` / `getImageCount()` / `getMaxImages()` - Limit-Management
+  - `waitForReady()` - Optional auf CR_READY warten
+- `extensions/default/src/utils/exportViewportToJpg.ts` (ERWEITERT)
+  - `exportViewportToImagePayload()` - Neuer Export für ArrayBuffer + Metadaten
+- `extensions/default/src/commandsModule.ts` (ANGEPASST)
+  - `generateReport` Command nutzt jetzt inkrementellen Flow
+
+**Flow (Issue #21 - Aktuell):**
+1. Button-Klick → Tab öffnen/wiederverwenden (`window.open(..., 'createreport')`)
+2. Limit prüfen (max 10)
+3. Aktiven Viewport als PNG exportieren (ArrayBuffer)
+4. Optional auf `CR_READY` warten (3s Timeout)
+5. Image via `postMessage(CR_ADD_IMAGE)` senden (zero-copy Transfer)
+6. Toast: "Image x/10 sent to CreateReport"
+
+**Message-Format:**
+```typescript
+interface CRAddImageMessage {
+  type: 'CR_ADD_IMAGE';
+  fileName: string;      // z.B. "viewport_1704712345678.png"
+  mimeType: string;      // "image/png"
+  arrayBuffer: ArrayBuffer;  // Raw image data (transferable)
+}
+```
+
+**Testing (Issue #21):**
+1. OHIF starten: `yarn dev`
+2. CreateReport starten: `npm run dev` (Port 3000)
+3. Config prüfen: `window.config.createReport.baseUrl` sollte `http://localhost:3000` sein
+4. `http://localhost:3000/localbasic` öffnen, DICOM-Dateien laden
+5. Viewport aktiv klicken, dann "Generate Report" Button klicken
+6. Erwartet:
+   - CreateReport Tab öffnet sich (`/handoff`)
+   - Toast: "Image 1/10 sent to CreateReport"
+7. Weitere Klicks: Images werden inkrementell gesendet
+8. Nach 10 Bildern: Toast "Maximum 10 images reached"
+
+**Troubleshooting:**
+- **Popup blockiert:** Browser-Popup-Blocker für localhost deaktivieren
+- **Config fehlt:** `window.config.createReport.baseUrl` prüfen (Browser Console)
+- **Images erscheinen nicht:** CreateReport Console auf Fehler prüfen (Origin-Whitelist)
+- **CR_READY timeout:** Kein Problem, Images werden trotzdem gesendet
+
 **Nächste Schritte:**
-- CreateReport: `/handoff` Route implementieren
-- CreateReport: postMessage-Listener für `CR_HANDOFF_REPORT`
-- CreateReport: Auto-Login und Report-Anzeige
+- CreateReport: `/handoff` Route muss `CR_ADD_IMAGE` Messages empfangen
+- CreateReport: Bilder in Images-Liste anzeigen
+- CreateReport: Origin-Whitelist konfigurieren (ALLOWED_ORIGINS)
 
 ### 2024-XX-XX: Initiale Analyse
 - Epic #10 analysiert
@@ -445,5 +505,8 @@ Unser Use Case:
 - **Issue #16:** https://github.com/nq-igortoker/CreateReport/issues/16
 - **Issue #17:** https://github.com/nq-igortoker/CreateReport/issues/17
 - **Issue #18:** https://github.com/nq-igortoker/CreateReport/issues/18
+- **Issue #20:** https://github.com/nq-igortoker/CreateReport/issues/20 (Inkrementelles Key-Image Sammeln)
+- **Issue #21:** https://github.com/nq-igortoker/CreateReport/issues/21 (OHIF Button → inkrementell senden)
+- **Handoff-Doku:** https://github.com/nq-igortoker/CreateReport/blob/development/docs/OHIF_HANDOFF_INTEGRATION.md
 - **OHIF Upstream:** https://github.com/OHIF/Viewers
 - **OHIF Docs:** https://docs.ohif.org/

@@ -51,3 +51,5 @@ platform/app/.recipes/OpenResty-Orthanc/logs/*
 
 # Uploads from mock server (for Issue #17 testing)
 uploads/
+mock-server.log
+mock-server.pid

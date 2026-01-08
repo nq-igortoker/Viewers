@@ -4,6 +4,10 @@ import { pluginNodePolyfill } from '@rsbuild/plugin-node-polyfill';
 import path from 'path';
 import writePluginImportsFile from './platform/app/.webpack/writePluginImportsFile';
 import fs from 'fs';
+import dotenv from 'dotenv';
+
+// Load environment variables from .env file
+dotenv.config();
 
 const SRC_DIR = path.resolve(__dirname, './platform/app/src');
 const DIST_DIR = path.resolve(__dirname, './platform/app/dist');
@@ -27,6 +31,10 @@ const PROXY_PATH_REWRITE_TO = process.env.PROXY_PATH_REWRITE_TO;
 const OHIF_PORT = Number(process.env.OHIF_PORT || 3000);
 const OHIF_OPEN = process.env.OHIF_OPEN !== 'false';
 
+// CreateReport environment variables (support both naming conventions)
+const CREATE_REPORT_BASE_URL = process.env.CREATE_REPORT_BASE_URL || '';
+const CREATE_REPORT_API_KEY = process.env.CREATE_REPORT_API_KEY || process.env.OHIF_CREATE_REPORT_API_KEY || '';
+
 export default defineConfig({
   source: {
     entry: {
@@ -44,6 +52,9 @@ export default defineConfig({
       'process.env.LOCIZE_PROJECTID': JSON.stringify(process.env.LOCIZE_PROJECTID || ''),
       'process.env.LOCIZE_API_KEY': JSON.stringify(process.env.LOCIZE_API_KEY || ''),
       'process.env.REACT_APP_I18N_DEBUG': JSON.stringify(process.env.REACT_APP_I18N_DEBUG || ''),
+      // CreateReport environment variables
+      'process.env.CREATE_REPORT_BASE_URL': JSON.stringify(CREATE_REPORT_BASE_URL),
+      'process.env.CREATE_REPORT_API_KEY': JSON.stringify(CREATE_REPORT_API_KEY),
     },
   },
   plugins: [pluginReact(), pluginNodePolyfill()],
@@ -129,6 +140,8 @@ export default defineConfig({
     template: path.resolve(PUBLIC_DIR, 'html-templates/index.html'),
     templateParameters: {
       PUBLIC_URL,
+      CREATE_REPORT_BASE_URL,
+      CREATE_REPORT_API_KEY,
     },
   },
   server: {

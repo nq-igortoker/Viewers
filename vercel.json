@@ -1,13 +1,13 @@
 {
   "version": 2,
-  "buildCommand": "cd platform/app && cross-env NODE_ENV=production APP_CONFIG=config/local_static.js yarn build",
+  "buildCommand": "cd platform/app && cross-env NODE_ENV=production APP_CONFIG=config/demo.js PUBLIC_URL=/ yarn build",
   "outputDirectory": "platform/app/dist",
   "framework": null,
   "installCommand": "yarn install:frozen",
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
@@ -30,4 +30,3 @@
     }
   ]
 }
-

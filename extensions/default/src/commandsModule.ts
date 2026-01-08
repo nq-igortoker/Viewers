@@ -279,6 +279,11 @@ const commandsModule = ({
           return;
         }
 
+        // Validate API key if configured
+        if (!config.apiKey) {
+          console.warn('CreateReport API key is not configured. Requests may fail if API requires authentication.');
+        }
+
         // Show uploading notification
         uiNotificationService.show({
           title: 'Generate Report',
@@ -291,6 +296,7 @@ const commandsModule = ({
         console.log('Starting upload to CreateReport:', {
           baseUrl: config.baseUrl,
           language: config.selectedLanguage,
+          hasApiKey: !!config.apiKey,
           fileSize: imageFile.size,
           fileName: imageFile.name,
         });
@@ -298,7 +304,8 @@ const commandsModule = ({
         const response = await uploadToCreateReport(
           [imageFile],
           config.baseUrl,
-          config.selectedLanguage
+          config.selectedLanguage,
+          config.apiKey
         );
 
         console.log('CreateReport response:', {

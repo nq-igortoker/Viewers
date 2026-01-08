@@ -27,6 +27,10 @@ const PROXY_PATH_REWRITE_TO = process.env.PROXY_PATH_REWRITE_TO;
 const IS_COVERAGE = process.env.COVERAGE === 'true';
 
 const OHIF_PORT = Number(process.env.OHIF_PORT || 3000);
+
+// CreateReport environment variables
+const CREATE_REPORT_BASE_URL = process.env.CREATE_REPORT_BASE_URL || '';
+const CREATE_REPORT_API_KEY = process.env.CREATE_REPORT_API_KEY || '';
 const ENTRY_TARGET = process.env.ENTRY_TARGET || `${SRC_DIR}/index.js`;
 const Dotenv = require('dotenv-webpack');
 const writePluginImportFile = require('./writePluginImportsFile.js');
@@ -125,6 +129,8 @@ module.exports = (env, argv) => {
         filename: 'index.html',
         templateParameters: {
           PUBLIC_URL: PUBLIC_URL,
+          CREATE_REPORT_BASE_URL: CREATE_REPORT_BASE_URL,
+          CREATE_REPORT_API_KEY: CREATE_REPORT_API_KEY,
         },
       }),
       // Generate a service worker for fast local loads

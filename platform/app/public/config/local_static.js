@@ -133,7 +133,20 @@ window.config = {
   },
   // CreateReport Integration Configuration
   createReport: {
-    baseUrl: 'http://localhost:3001', // Configure this to point to your CreateReport instance
+    // baseUrl can be set via CREATE_REPORT_BASE_URL environment variable
+    baseUrl: (function() {
+      if (typeof window !== 'undefined' && window.env && window.env.CREATE_REPORT_BASE_URL) {
+        return window.env.CREATE_REPORT_BASE_URL;
+      }
+      return 'http://localhost:3001'; // Default: Configure this to point to your CreateReport instance
+    })(),
     selectedLanguage: 'en', // Default language: 'en', 'de', etc.
+    // apiKey can be set via CREATE_REPORT_API_KEY environment variable
+    apiKey: (function() {
+      if (typeof window !== 'undefined' && window.env && window.env.CREATE_REPORT_API_KEY) {
+        return window.env.CREATE_REPORT_API_KEY;
+      }
+      return ''; // Default: API Key for authentication (set via environment variable or config)
+    })(),
   },
 };

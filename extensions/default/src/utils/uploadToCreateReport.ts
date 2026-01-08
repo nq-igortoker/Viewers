@@ -3,12 +3,14 @@
  * @param files - Array of image files to upload
  * @param baseUrl - CreateReport base URL
  * @param selectedLanguage - Optional language code (e.g., 'en', 'de')
+ * @param apiKey - Optional API key for authentication
  * @returns Promise<Response> - The fetch response
  */
 export async function uploadToCreateReport(
   files: File[],
   baseUrl: string,
-  selectedLanguage?: string
+  selectedLanguage?: string,
+  apiKey?: string
 ): Promise<Response> {
   if (!files || files.length === 0) {
     throw new Error('At least one file is required');
@@ -35,9 +37,16 @@ export async function uploadToCreateReport(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
+  // Build headers
+  const headers: HeadersInit = {};
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
+  }
+
   try {
     const response = await fetch(`${baseUrl}/api/generate-report`, {
       method: 'POST',
+      headers: headers,
       body: formData,
       signal: controller.signal,
     });

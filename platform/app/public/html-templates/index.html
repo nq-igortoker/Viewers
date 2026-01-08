@@ -45,6 +45,18 @@
     <script type="text/javascript">
       console.time('scriptToView');
       window.PUBLIC_URL = '<%= PUBLIC_URL %>';
+      // CreateReport environment variables (injected at build time)
+      window.env = window.env || {};
+      <% if (typeof CREATE_REPORT_BASE_URL !== 'undefined') { %>
+      window.env.CREATE_REPORT_BASE_URL = '<%= CREATE_REPORT_BASE_URL %>';
+      <% } else { %>
+      window.env.CREATE_REPORT_BASE_URL = '';
+      <% } %>
+      <% if (typeof CREATE_REPORT_API_KEY !== 'undefined') { %>
+      window.env.CREATE_REPORT_API_KEY = '<%= CREATE_REPORT_API_KEY %>';
+      <% } else { %>
+      window.env.CREATE_REPORT_API_KEY = '';
+      <% } %>
     </script>
     <link
       rel="manifest"

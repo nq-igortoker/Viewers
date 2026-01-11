@@ -9,6 +9,20 @@ window.config = {
   strictZSpacingForVolumeViewport: true,
   showCPUFallbackMessage: true,
   defaultDataSourceName: 'dicomweb',
+  // CreateReport Integration Configuration
+  createReport: {
+    // baseUrl: Set via CREATE_REPORT_BASE_URL environment variable in Vercel
+    // Default: CreateReport Vercel URL
+    baseUrl: (function() {
+      // Check for runtime environment variable (injected at build time)
+      if (typeof process !== 'undefined' && process.env && process.env.CREATE_REPORT_BASE_URL) {
+        return process.env.CREATE_REPORT_BASE_URL;
+      }
+      // Fallback to CreateReport Vercel deployment
+      return 'https://dev-create-report.vercel.app';
+    })(),
+    selectedLanguage: 'de', // Default language for reports
+  },
   dataSources: [
     {
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',

@@ -4,6 +4,11 @@
   "outputDirectory": "platform/app/dist",
   "framework": null,
   "installCommand": "yarn install:frozen",
+  "functions": {
+    "middleware.ts": {
+      "runtime": "edge"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

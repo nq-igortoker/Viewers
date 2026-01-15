@@ -148,16 +148,12 @@ Siehe **[ENV_VARIABLES.md](ENV_VARIABLES.md)** für alle Environment Variables.
 
 ### Vercel (Empfohlen)
 
-**Aktuell deployed:**
-- Production: https://ohif-viewer-mu.vercel.app
-- Alternative: https://ohif-viewer-neoq.vercel.app
-
 **Setup:**
 
 1. Repository mit Vercel verbinden
 2. Environment Variables setzen:
    ```
-   CREATE_REPORT_BASE_URL=https://dev-create-report.vercel.app
+   CREATE_REPORT_BASE_URL=https://your-createreport-instance.vercel.app
    ```
 3. Deployen (automatisch bei Git Push)
 
@@ -255,7 +251,7 @@ Erwartung: Sollte Ihre CreateReport URL zeigen
 
 **Check 3: CreateReport erreichbar?**
 ```bash
-curl https://your-createreport-url.vercel.app
+curl https://your-createreport-instance.vercel.app
 ```
 
 **Check 4: Redeploy nach Env Var Änderung?**

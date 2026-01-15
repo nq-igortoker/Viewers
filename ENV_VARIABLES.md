@@ -27,11 +27,8 @@ OHIF Viewer nutzt Environment Variables für die Konfiguration verschiedener Int
 # Lokale Entwicklung
 CREATE_REPORT_BASE_URL=http://localhost:3001
 
-# Development auf Vercel
-CREATE_REPORT_BASE_URL=https://dev-create-report.vercel.app
-
-# Production
-CREATE_REPORT_BASE_URL=https://create-report.vercel.app
+# Production auf Vercel
+CREATE_REPORT_BASE_URL=https://your-createreport-instance.vercel.app
 ```
 
 **Verwendung lokal:**
@@ -42,7 +39,7 @@ CREATE_REPORT_BASE_URL=http://localhost:3001 yarn dev:fast
 **Verwendung Vercel:**
 1. Dashboard → Settings → Environment Variables
 2. Name: `CREATE_REPORT_BASE_URL`
-3. Value: `https://your-createreport-url.vercel.app`
+3. Value: `https://your-createreport-instance.vercel.app`
 4. Environments: Production, Preview, Development
 5. **Redeploy erforderlich!**
 
@@ -257,7 +254,7 @@ CREATE_REPORT_BASE_URL=http://localhost:3001 yarn dev:fast
    
    **CREATE_REPORT_BASE_URL:**
    - Name: `CREATE_REPORT_BASE_URL`
-   - Value: `https://dev-create-report.vercel.app`
+   - Value: `https://your-createreport-instance.vercel.app`
    - Environments: ✅ Production, ✅ Preview, ✅ Development
    - Save
 
@@ -330,7 +327,7 @@ Browser:
 
 <!-- Nach Build: -->
 <script>
-  window.env.CREATE_REPORT_BASE_URL = 'https://dev-create-report.vercel.app';
+  window.env.CREATE_REPORT_BASE_URL = 'https://your-createreport-instance.vercel.app';
 </script>
 ```
 
@@ -391,7 +388,7 @@ console.log(window.env.CREATE_REPORT_BASE_URL)
 **Erwartung:**
 ```javascript
 {
-  CREATE_REPORT_BASE_URL: 'https://dev-create-report.vercel.app',
+  CREATE_REPORT_BASE_URL: 'https://your-createreport-instance.vercel.app',
   CREATE_REPORT_API_KEY: ''
 }
 ```
@@ -404,10 +401,10 @@ console.log(window.env.CREATE_REPORT_BASE_URL)
 
 **Check 2: Ist CreateReport erreichbar?**
 ```bash
-curl https://dev-create-report.vercel.app
+curl https://your-createreport-instance.vercel.app
 # Erwartung: HTML response (nicht 404)
 
-curl https://dev-create-report.vercel.app/handoff
+curl https://your-createreport-instance.vercel.app/handoff
 # Erwartung: Handoff page HTML
 ```
 

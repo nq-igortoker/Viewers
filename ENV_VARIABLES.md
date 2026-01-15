@@ -205,26 +205,6 @@ MAINTENANCE_MODE=false # OHIF läuft normal
 
 ---
 
-### CREATE_REPORT_HANDOFF_PATH
-
-**Status:** 🔄 In Planung (Issue #41)
-
-**Beschreibung:** Konfigurierbarer Handoff-Pfad (statt hardcoded `/handoff`)
-
-**Typ:** Build-Time  
-**Default:** `/handoff`  
-**Format:** String (Pfad mit führendem `/`)
-
-**Geplante Verwendung:**
-```bash
-# Vercel Dashboard
-CREATE_REPORT_HANDOFF_PATH=/handoff        # Standard
-CREATE_REPORT_HANDOFF_PATH=/beta/handoff   # Custom
-CREATE_REPORT_HANDOFF_PATH=/ohif           # Alternative
-```
-
----
-
 ## Setup-Guides
 
 ### Lokale Entwicklung
@@ -577,4 +557,3 @@ vercel env add CREATE_REPORT_BASE_URL
 - **OHIF Configuration:** https://docs.ohif.org/configuration/
 - **CreateReport Repo:** https://github.com/nq-igortoker/CreateReport
 - **Issue #34 (Maintenance Mode):** https://github.com/nq-igortoker/CreateReport/issues/34
-- **Issue #41 (Handoff Path):** https://github.com/nq-igortoker/CreateReport/issues/41

@@ -312,7 +312,6 @@ git rebase upstream/master
 
 **Geplant:**
 - 🔄 Issue #34 - Wartungsmodus Implementation
-- 🔄 Issue #41 - Handoff Path konfigurierbar
 
 Siehe [CreateReport Issues](https://github.com/nq-igortoker/CreateReport/issues?q=label%3AOHIF)
 

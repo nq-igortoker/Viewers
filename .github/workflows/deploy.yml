@@ -1,0 +1,54 @@
+name: Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build-deploy:
+    name: Build & Deploy to Hetzner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+
+      - name: Build (Hetzner config)
+        working-directory: platform/app
+        run: npx cross-env NODE_ENV=production APP_CONFIG=config/hetzner.js PUBLIC_URL=/ yarn build
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy (rsync + atomarer Symlink-Swap)
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          DEST=/opt/ohif-viewer/releases/$SHORT_SHA
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/id_deploy" \
+            --link-dest=/opt/ohif-viewer/current/ \
+            platform/app/dist/ \
+            "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:$DEST/"
+          ssh -i ~/.ssh/id_deploy "${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}" \
+            "ln -sfn $DEST /opt/ohif-viewer/current \
+             && ls -dt /opt/ohif-viewer/releases/*/ | tail -n +4 | xargs -r rm -rf"
+
+      - name: Health check
+        run: |
+          sleep 2
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://viewer.create-report.com/)
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed with HTTP $STATUS"
+            exit 1
+          fi
+          echo "Health check OK"

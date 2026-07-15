@@ -12,8 +12,29 @@ window.config = {
   showLoadingIndicator: true,
   strictZSpacingForVolumeViewport: true,
   // filterQueryParam: false,
-  defaultDataSourceName: 'local',
+  defaultDataSourceName: 'pacs',
   dataSources: [
+    {
+      // CreateReport#92: Orthanc PACS (public read-only DICOMweb, see CreateReport#91)
+      namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
+      sourceName: 'pacs',
+      configuration: {
+        friendlyName: 'CreateReport PACS (Orthanc)',
+        name: 'Orthanc',
+        qidoRoot: 'https://pacs.create-report.com/dicom-web',
+        wadoRoot: 'https://pacs.create-report.com/dicom-web',
+        qidoSupportsIncludeField: false,
+        imageRendering: 'wadors',
+        thumbnailRendering: 'wadors',
+        enableStudyLazyLoad: true,
+        supportsFuzzyMatching: false,
+        supportsWildcard: true,
+        supportsStow: false,
+        supportsReject: false,
+        dicomUploadEnabled: false,
+        omitQuotationForMultipartRequest: true,
+      },
+    },
     {
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
       sourceName: 'local',

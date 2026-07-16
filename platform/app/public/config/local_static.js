@@ -138,12 +138,15 @@ window.config = {
       if (typeof window !== 'undefined' && window.env && window.env.CREATE_REPORT_BASE_URL) {
         return window.env.CREATE_REPORT_BASE_URL;
       }
-      // Use Vercel deployment URL for production, localhost for development
-      if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-        return 'https://dev-create-report.vercel.app';
-      }
-      return 'http://localhost:3000'; // Local development
+      return 'http://localhost:3001'; // Local development (CreateReport dev server)
     })(),
+    // Origins the CreateReport main window may answer the viewer handshake
+    // from (CR_HELLO, CreateReport#97)
+    allowedAppOrigins: [
+      'http://localhost:3001',
+      'https://dev.create-report.com',
+      'https://app.create-report.com',
+    ],
     selectedLanguage: 'de', // Default language: 'de' for German reports
     // apiKey can be set via CREATE_REPORT_API_KEY environment variable
     apiKey: (function() {

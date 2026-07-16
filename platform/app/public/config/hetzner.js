@@ -188,6 +188,14 @@ window.config = {
       }
       return 'http://localhost:3001'; // Local development (CreateReport dev server)
     })(),
+    // Origins the CreateReport main window may answer the viewer handshake
+    // from (CR_HELLO, CreateReport#97). Covers prod, staging and local dev —
+    // the same viewer build serves all three.
+    allowedAppOrigins: [
+      'https://app.create-report.com',
+      'https://dev.create-report.com',
+      'http://localhost:3001',
+    ],
     selectedLanguage: 'de', // Default language: 'de' for German reports
     // apiKey can be set via CREATE_REPORT_API_KEY environment variable
     apiKey: (function() {

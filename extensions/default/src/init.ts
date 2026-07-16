@@ -6,6 +6,7 @@ import getPTImageIdInstanceMetadata from './getPTImageIdInstanceMetadata';
 import { registerHangingProtocolAttributes } from './hangingprotocols';
 import { HotkeysManager } from '@ohif/core';
 import ReportIcon from './Components/ReportIcon';
+import { initAppHandshake } from './utils/createReportIncrementalHandoff';
 
 const metadataProvider = classes.MetadataProvider;
 
@@ -21,6 +22,20 @@ export default function init({
 }: withAppTypes): void {
   // Register custom "R" icon for Generate Report button
   Icons.addIcon('tool-generate-report', ReportIcon);
+
+  // CreateReport#97: if this viewer was opened by the CreateReport main
+  // window, establish the direct image channel (CR_VIEWER_READY → CR_HELLO)
+  const createReportConfig = (window as any).config?.createReport;
+  if (createReportConfig?.baseUrl) {
+    try {
+      const allowedAppOrigins: string[] = createReportConfig.allowedAppOrigins?.length
+        ? createReportConfig.allowedAppOrigins
+        : [new URL(createReportConfig.baseUrl).origin];
+      initAppHandshake(allowedAppOrigins);
+    } catch (error) {
+      console.warn('CreateReport handshake init failed:', error);
+    }
+  }
 
   const { toolbarService, cineService, viewportGridService } = servicesManager.services;
 

@@ -31,7 +31,9 @@ import {
   canSendMore,
   getImageCount,
   getMaxImages,
+  hasAppConnection,
 } from './utils/createReportIncrementalHandoff';
+import { getViewportDicomContext } from './utils/getViewportDicomContext';
 
 export type HangingProtocolParams = {
   protocolId?: string;
@@ -285,33 +287,45 @@ const commandsModule = ({
         return;
       }
 
-      // CRITICAL: Open/reuse CreateReport tab SYNCHRONOUSLY (before any await)
-      // This MUST be in the synchronous part of the click handler to avoid popup blockers
-      const crWindow = openOrReuseCreateReportTab(config.baseUrl);
+      // Direct channel to the CreateReport main window (opener handshake,
+      // CreateReport#97)? Then no tab is needed. Otherwise open/reuse the
+      // /handoff tab SYNCHRONOUSLY (before any await) to avoid popup blockers.
+      if (!hasAppConnection()) {
+        const crWindow = openOrReuseCreateReportTab(config.baseUrl);
 
-      if (!crWindow) {
-        uiNotificationService.show({
-          title: 'Generate Report',
-          message: 'Popup was blocked. Please allow popups for this site and try again.',
-          type: 'error',
-          duration: 5000,
-        });
-        return;
+        if (!crWindow) {
+          uiNotificationService.show({
+            title: 'Generate Report',
+            message: 'Popup was blocked. Please allow popups for this site and try again.',
+            type: 'error',
+            duration: 5000,
+          });
+          return;
+        }
       }
 
       try {
         // Export the viewport as PNG (ArrayBuffer for postMessage transfer)
         const imagePayload = await exportViewportToImagePayload(activeViewportId, 'image/png');
 
+        // DICOM context (UIDs + curated meta) for case attribution in
+        // CreateReport — best effort, the send degrades gracefully without it
+        const dicomContext = getViewportDicomContext(servicesManager, activeViewportId);
+
         console.log('Sending image to CreateReport:', {
           baseUrl: config.baseUrl,
           fileName: imagePayload.fileName,
           mimeType: imagePayload.mimeType,
           size: imagePayload.arrayBuffer.byteLength,
+          studyInstanceUid: dicomContext?.dicomRef?.studyInstanceUid,
         });
 
         // Send the image via postMessage
-        const result = await sendViewportImage(config.baseUrl, imagePayload);
+        const result = await sendViewportImage(config.baseUrl, {
+          ...imagePayload,
+          dicomRef: dicomContext?.dicomRef,
+          meta: dicomContext?.meta,
+        });
 
         if (result.success) {
           const maxImages = getMaxImages();

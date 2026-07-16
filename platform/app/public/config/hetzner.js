@@ -1,6 +1,29 @@
 /** @type {AppTypes.Config} */
 window.config = {
   routerBasename: null,
+  // Demo data only — Igor's explicit decision (CreateReport#95, 2026-07-16): hide the
+  // investigational-use dialog for demos; MUST be replaced by an MDR-appropriate notice
+  // before any real patient data (pilot study, CreateReport#89).
+  investigationalUseDialog: { option: 'never' },
+  // CreateReport branding (CreateReport#95): logo links back to the worklist.
+  whiteLabeling: {
+    createLogoComponentFn: function (React) {
+      return React.createElement(
+        'a',
+        {
+          target: '_self',
+          rel: 'noopener noreferrer',
+          className: 'flex items-center',
+          href: 'https://app.create-report.com',
+        },
+        React.createElement('img', {
+          src: (window.PUBLIC_URL || '/') + 'assets/createreport-logo.svg',
+          className: 'h-8',
+          alt: 'CreateReport',
+        })
+      );
+    },
+  },
   customizationService: ['@ohif/extension-default.customizationModule.helloPage'],
   extensions: [],
   modes: [],

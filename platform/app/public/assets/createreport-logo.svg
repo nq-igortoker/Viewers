@@ -1,0 +1,31 @@
+<svg width="170" height="32" viewBox="0 0 170 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="CreateReport">
+  <defs>
+    <linearGradient id="crLogoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#67e8f9" />
+      <stop offset="100%" stop-color="#c4b5fd" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer ring - represents scanning/imaging -->
+  <circle cx="16" cy="16" r="14" stroke="url(#crLogoGradient)" stroke-width="2" fill="none" opacity="0.8" />
+
+  <!-- Stylized R -->
+  <path
+    d="M11 8h6.5c2.5 0 4.5 2 4.5 4.5 0 2.2-1.6 4-3.7 4.4L22 24h-3.5l-3.5-6.5H14V24h-3V8zm3 3v4h3.5c0.8 0 1.5-0.7 1.5-1.5v-1c0-0.8-0.7-1.5-1.5-1.5H14z"
+    fill="#ffffff"
+  />
+
+  <!-- Accent dot - like a scan point -->
+  <circle cx="24" cy="8" r="2" fill="url(#crLogoGradient)" />
+
+  <!-- Wordmark -->
+  <text
+    x="40"
+    y="21.5"
+    font-family="Inter, -apple-system, 'Segoe UI', Roboto, sans-serif"
+    font-size="15"
+    font-weight="600"
+    letter-spacing="0.2"
+    fill="#ffffff"
+  >Create<tspan fill="url(#crLogoGradient)">Report</tspan></text>
+</svg>

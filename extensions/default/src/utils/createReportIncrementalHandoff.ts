@@ -36,6 +36,14 @@ export interface SendImageResult {
   error?: string;
 }
 
+/**
+ * Delivery-channel policy (CreateReport#99):
+ * - 'auto'   — main-window channel on desktop, /handoff tab on mobile
+ * - 'window' — always prefer the main-window channel when connected
+ * - 'tab'    — always use the /handoff tab
+ */
+export type HandoffMode = 'auto' | 'window' | 'tab';
+
 // ============================================================================
 // Module-level State (persists across clicks)
 // ============================================================================
@@ -108,6 +116,32 @@ export const hasAppConnection = (): boolean => {
   return !!appWindow && !appWindow.closed && !!appOrigin;
 };
 
+/**
+ * Phone/tablet heuristic (CreateReport#99): coarse pointer + small viewport.
+ * There is no side-by-side window layout on these devices, so images sent to
+ * the main window would land in an invisible background tab.
+ */
+export const isMobileDevice = (): boolean => {
+  return (
+    typeof window !== 'undefined' &&
+    !!window.matchMedia?.('(pointer: coarse) and (max-width: 1024px)').matches
+  );
+};
+
+/**
+ * Resolves which channel to use for the next send (CreateReport#99).
+ * The tab channel is the answer whenever this returns false.
+ */
+export const shouldUseAppChannel = (mode: HandoffMode = 'auto'): boolean => {
+  if (mode === 'tab') {
+    return false;
+  }
+  if (mode === 'window') {
+    return hasAppConnection();
+  }
+  return hasAppConnection() && !isMobileDevice();
+};
+
 // ============================================================================
 // CR_READY Listener Setup
 // ============================================================================
@@ -154,14 +188,28 @@ export const setupCRReadyListener = (baseUrl: string): void => {
  * MUST be called synchronously within a user click handler to avoid popup blockers.
  *
  * @param baseUrl - CreateReport base URL
+ * @param options - focus: bring an already-open tab to the foreground
+ *   (CreateReport#99, mobile). Uses `window.open('', name)` — an empty URL
+ *   focuses the named tab WITHOUT re-navigating, so collected images survive.
  * @returns The CreateReport window, or null if blocked
  */
-export const openOrReuseCreateReportTab = (baseUrl: string): Window | null => {
+export const openOrReuseCreateReportTab = (
+  baseUrl: string,
+  options?: { focus?: boolean }
+): Window | null => {
   // Ensure listener is set up
   setupCRReadyListener(baseUrl);
 
   // Check if we already have an open tab
   if (crWindow && !crWindow.closed) {
+    if (options?.focus) {
+      try {
+        window.open('', 'createreport');
+        crWindow.focus();
+      } catch {
+        // Focus is best effort — some browsers refuse it outside a gesture
+      }
+    }
     // Tab is still open, reuse it
     return crWindow;
   }
@@ -244,13 +292,15 @@ export const waitForReady = (timeoutMs: number = 5000): Promise<boolean> => {
  *
  * @param baseUrl - CreateReport base URL (used for the tab channel's targetOrigin)
  * @param payload - The image payload (arrayBuffer, fileName, mimeType, dicomRef?, meta?)
+ * @param mode - delivery-channel policy (CreateReport#99), default 'auto'
  * @returns Result indicating success/failure and image number
  */
 export const sendViewportImage = async (
   baseUrl: string,
-  payload: ImagePayload
+  payload: ImagePayload,
+  mode: HandoffMode = 'auto'
 ): Promise<SendImageResult> => {
-  const useAppChannel = hasAppConnection();
+  const useAppChannel = shouldUseAppChannel(mode);
 
   // Tab channel needs its window (opened synchronously in the click handler)
   if (!useAppChannel && (!crWindow || crWindow.closed)) {
@@ -355,6 +405,8 @@ export const closeAndReset = (): void => {
 export default {
   initAppHandshake,
   hasAppConnection,
+  isMobileDevice,
+  shouldUseAppChannel,
   setupCRReadyListener,
   openOrReuseCreateReportTab,
   canSendMore,

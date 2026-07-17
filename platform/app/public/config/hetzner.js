@@ -196,6 +196,10 @@ window.config = {
       'https://dev.create-report.com',
       'http://localhost:3001',
     ],
+    // Delivery channel for key images (CreateReport#99):
+    // 'auto' = main window on desktop, active switch to the /handoff tab on
+    // mobile; 'window' / 'tab' force one channel.
+    handoffMode: 'auto',
     selectedLanguage: 'de', // Default language: 'de' for German reports
     // apiKey can be set via CREATE_REPORT_API_KEY environment variable
     apiKey: (function() {

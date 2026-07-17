@@ -31,7 +31,9 @@ import {
   canSendMore,
   getImageCount,
   getMaxImages,
-  hasAppConnection,
+  isMobileDevice,
+  shouldUseAppChannel,
+  type HandoffMode,
 } from './utils/createReportIncrementalHandoff';
 import { getViewportDicomContext } from './utils/getViewportDicomContext';
 
@@ -287,11 +289,16 @@ const commandsModule = ({
         return;
       }
 
-      // Direct channel to the CreateReport main window (opener handshake,
-      // CreateReport#97)? Then no tab is needed. Otherwise open/reuse the
-      // /handoff tab SYNCHRONOUSLY (before any await) to avoid popup blockers.
-      if (!hasAppConnection()) {
-        const crWindow = openOrReuseCreateReportTab(config.baseUrl);
+      // Channel policy (CreateReport#97/#99): main-window channel on desktop,
+      // /handoff tab on mobile (no side-by-side windows there) or when
+      // configured/tab-only. The tab must be opened/focused SYNCHRONOUSLY
+      // (before any await) to avoid popup blockers.
+      const handoffMode: HandoffMode = config.handoffMode || 'auto';
+      if (!shouldUseAppChannel(handoffMode)) {
+        // On mobile the user is actively taken to the handoff tab (#99)
+        const crWindow = openOrReuseCreateReportTab(config.baseUrl, {
+          focus: isMobileDevice(),
+        });
 
         if (!crWindow) {
           uiNotificationService.show({
@@ -321,11 +328,15 @@ const commandsModule = ({
         });
 
         // Send the image via postMessage
-        const result = await sendViewportImage(config.baseUrl, {
-          ...imagePayload,
-          dicomRef: dicomContext?.dicomRef,
-          meta: dicomContext?.meta,
-        });
+        const result = await sendViewportImage(
+          config.baseUrl,
+          {
+            ...imagePayload,
+            dicomRef: dicomContext?.dicomRef,
+            meta: dicomContext?.meta,
+          },
+          handoffMode
+        );
 
         if (result.success) {
           const maxImages = getMaxImages();

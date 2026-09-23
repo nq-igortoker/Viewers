@@ -10,6 +10,7 @@ import ToolButtonListWrapper from './Toolbar/ToolButtonListWrapper';
 import ToolRowWrapper from './Toolbar/ToolRowWrapper';
 import { ToolBoxButtonGroupWrapper, ToolBoxButtonWrapper } from './Toolbar/ToolBoxWrapper';
 import { ToolButtonWrapper } from './Toolbar/ToolButtonWrapper';
+import LesionChipWrapper from './Toolbar/LesionChipWrapper';
 import { Toolbar } from './Toolbar';
 
 export default function getToolbarModule({ commandsManager, servicesManager }: withAppTypes) {
@@ -45,6 +46,11 @@ export default function getToolbarModule({ commandsManager, servicesManager }: w
     {
       name: 'ohif.progressDropdown',
       defaultComponent: ProgressDropdownWithService,
+    },
+    // CreateReport#26: lesion selector shown next to the R button
+    {
+      name: 'cr.lesionChip',
+      defaultComponent: LesionChipWrapper,
     },
     {
       name: 'ohif.Toolbar',

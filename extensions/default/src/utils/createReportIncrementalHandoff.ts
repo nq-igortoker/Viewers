@@ -12,23 +12,26 @@
  * - Tab channel (fallback): the legacy flow opens `<baseUrl>/handoff` in a
  *   named tab and posts there. Used when there is no (valid) opener.
  *
- * Messages are CR_ADD_IMAGE v2: screenshot + `dicomRef` (Study/Series/SOP UID)
- * + a curated `meta` excerpt. v1 receivers simply ignore the extra fields.
+ * Messages are CR_ADD_IMAGE v2 (screenshot + `dicomRef` + a curated `meta`
+ * excerpt) or v3, which adds `finding` — the lesion the image was captured
+ * for (CreateReport#26). Receivers ignore fields they do not know, so a v3
+ * message degrades to v2 behaviour and the images still arrive.
  */
 
-import type { DicomRef, DicomMetaExcerpt } from './getViewportDicomContext';
+import {
+  buildCreateReportMessage,
+  type CreateReportImagePayload,
+} from './buildCreateReportMessage';
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface ImagePayload {
-  arrayBuffer: ArrayBuffer;
-  fileName: string;
-  mimeType: string;
-  dicomRef?: DicomRef;
-  meta?: DicomMetaExcerpt;
-}
+/**
+ * The image plus everything that describes it. `finding` (v3) is optional —
+ * without it the message stays v2-shaped.
+ */
+export type ImagePayload = CreateReportImagePayload;
 
 export interface SendImageResult {
   success: boolean;
@@ -339,15 +342,7 @@ export const sendViewportImage = async (
   try {
     // Send the image via postMessage with transferable ArrayBuffer
     targetWindow.postMessage(
-      {
-        type: 'CR_ADD_IMAGE',
-        version: 2,
-        fileName: payload.fileName,
-        mimeType: payload.mimeType,
-        arrayBuffer: payload.arrayBuffer,
-        dicomRef: payload.dicomRef,
-        meta: payload.meta,
-      },
+      buildCreateReportMessage(payload),
       targetOrigin,
       [payload.arrayBuffer] // Transfer the ArrayBuffer (zero-copy)
     );

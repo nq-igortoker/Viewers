@@ -642,6 +642,15 @@ const toolbarButtons: Button[] = [
     },
   },
   {
+    // CreateReport#26: names the lesion the next R is captured for
+    id: 'LesionChip',
+    uiType: 'cr.lesionChip',
+    props: {
+      label: 'Lesion',
+      evaluate: 'evaluate.action',
+    },
+  },
+  {
     id: 'Layout',
     uiType: 'ohif.layoutSelector',
     props: {

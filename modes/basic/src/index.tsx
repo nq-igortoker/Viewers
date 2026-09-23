@@ -217,6 +217,7 @@ export const toolbarSections = {
     'WindowLevel',
     'Capture',
     'GenerateReport',
+    'LesionChip',
     'Layout',
     'Crosshairs',
     'MoreTools',

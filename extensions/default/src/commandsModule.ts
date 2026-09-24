@@ -328,10 +328,12 @@ const commandsModule = ({
           studyInstanceUid: dicomContext?.dicomRef?.studyInstanceUid,
         });
 
-        // CreateReport#26: the image is filed under whichever lesion the chip
-        // has active. Moving to another study starts a fresh set, and with
-        // nothing selected yet the first R creates "Lesion 1" — so capturing
-        // several views of one lesion needs no interaction with the chip.
+        // CreateReport#26: the image is filed under whichever finding the chip
+        // has active, so several views of one lesion need no interaction here.
+        // The chip normally adopts the study as soon as it is displayed; this
+        // call covers the case where R is pressed before that happened, and is
+        // a no-op once the uid matches. With nothing selected the capture goes
+        // to the Overview, which is where a scout or whole-study view belongs.
         const studyInstanceUid = dicomContext?.dicomRef?.studyInstanceUid;
         if (studyInstanceUid) {
           useCreateReportFindingsStore.getState().startStudy(studyInstanceUid);

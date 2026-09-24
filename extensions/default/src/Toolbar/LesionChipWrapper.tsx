@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import {
   Button,
   Icons,
@@ -15,6 +15,8 @@ import {
   findingLabel,
   type Finding,
 } from '../stores/useCreateReportFindingsStore';
+import { getActiveStudyInstanceUid } from '../utils/getActiveStudyInstanceUid';
+import { isCreateReportConfigured } from '../utils/isCreateReportConfigured';
 
 /**
  * The lesion selector that sits next to the R button (CreateReport#26).
@@ -25,6 +27,11 @@ import {
  *
  * Opening a study starts on Overview: the first capture is usually a scout or
  * whole-study view rather than a lesion.
+ *
+ * The chip also owns the session boundary. It follows the active viewport, so
+ * the store knows which study is on screen from the moment one is displayed
+ * rather than from the first press of R — otherwise a lesion picked before that
+ * first capture is thrown away when the study finally becomes known.
  */
 
 const imageCountLabel = (finding: Finding): string | null => {
@@ -34,12 +41,42 @@ const imageCountLabel = (finding: Finding): string | null => {
   return finding.imageCount === 1 ? '1 image' : `${finding.imageCount} images`;
 };
 
-export default function LesionChipWrapper({ disabled }: { disabled?: boolean }) {
+export default function LesionChipWrapper({
+  disabled,
+  servicesManager,
+}: {
+  disabled?: boolean;
+  servicesManager?: AppTypes.ServicesManager;
+}) {
   const findings = useCreateReportFindingsStore(state => state.findings);
   const activeFindingId = useCreateReportFindingsStore(state => state.activeFindingId);
   const createLesion = useCreateReportFindingsStore(state => state.createLesion);
   const ensureOverview = useCreateReportFindingsStore(state => state.ensureOverview);
   const setActiveFinding = useCreateReportFindingsStore(state => state.setActiveFinding);
+  const startStudy = useCreateReportFindingsStore(state => state.startStudy);
+
+  useEffect(() => {
+    if (!servicesManager) {
+      return;
+    }
+    const { viewportGridService } = servicesManager.services;
+
+    const syncStudy = () => {
+      const uid = getActiveStudyInstanceUid(servicesManager);
+      if (uid) {
+        startStudy(uid);
+      }
+    };
+
+    syncStudy();
+    const subscriptions = [
+      viewportGridService.EVENTS.VIEWPORTS_READY,
+      viewportGridService.EVENTS.ACTIVE_VIEWPORT_ID_CHANGED,
+      viewportGridService.EVENTS.GRID_STATE_CHANGED,
+    ].map(event => viewportGridService.subscribe(event, syncStudy));
+
+    return () => subscriptions.forEach(subscription => subscription.unsubscribe());
+  }, [servicesManager, startStudy]);
 
   const active = findings.find(f => f.id === activeFindingId);
   const lesions = findings.filter(f => f.kind === 'lesion');
@@ -54,6 +91,13 @@ export default function LesionChipWrapper({ disabled }: { disabled?: boolean }) 
   }, [createLesion]);
 
   const triggerLabel = active ? findingLabel(active) : 'Overview';
+
+  // Deployments without a `createReport` block cannot send anywhere — R answers
+  // "CreateReport base URL is not configured". Offering to name the lesion for
+  // that capture would be a promise the viewer cannot keep.
+  if (!isCreateReportConfigured()) {
+    return null;
+  }
 
   return (
     // h-10 matches the R button's box so the chip sits on the same baseline

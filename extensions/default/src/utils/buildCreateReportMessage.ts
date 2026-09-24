@@ -35,21 +35,39 @@ export interface CreateReportImagePayload {
   finding?: FindingRef;
 }
 
-export interface CreateReportAddImageMessage {
+interface CreateReportAddImageBase {
   type: 'CR_ADD_IMAGE';
-  version: 2 | 3;
   fileName: string;
   mimeType: string;
   arrayBuffer: ArrayBuffer;
   dicomRef?: DicomRef;
   meta?: DicomMetaExcerpt;
-  finding?: FindingRef;
 }
+
+/** No finding named: the message stays exactly as it was before the chip. */
+export interface CreateReportAddImageV2 extends CreateReportAddImageBase {
+  version: 2;
+  finding?: never;
+}
+
+/** A finding is what v3 *is*, so the field is required rather than optional. */
+export interface CreateReportAddImageV3 extends CreateReportAddImageBase {
+  version: 3;
+  finding: FindingRef;
+}
+
+/**
+ * Discriminated on `version`, mirroring `CrAddImageV2`/`CrAddImageV3` in
+ * CreateReport's `src/types/findings.ts`. A single type with `version: 2 | 3`
+ * and an optional `finding` would let the two files disagree about the one
+ * field the contract exists for.
+ */
+export type CreateReportAddImageMessage = CreateReportAddImageV2 | CreateReportAddImageV3;
 
 export const buildCreateReportMessage = (
   payload: CreateReportImagePayload
 ): CreateReportAddImageMessage => {
-  const message: CreateReportAddImageMessage = {
+  const message: CreateReportAddImageV2 = {
     type: 'CR_ADD_IMAGE',
     version: 2,
     fileName: payload.fileName,

@@ -88,6 +88,46 @@ describe('useCreateReportFindingsStore', () => {
   });
 });
 
+describe('adopting the study', () => {
+  it('keeps a lesion the radiologist picked before the first capture', () => {
+    const lesion = store().createLesion();
+
+    // The chip is used before the study is known: until the viewport reports
+    // one, or R is pressed, the store holds no uid.
+    store().startStudy('1.2.840.113619.2.55.3');
+
+    const active = store().findings.find(f => f.id === store().activeFindingId);
+    expect(active?.kind).toBe('lesion');
+    expect(active?.id).toBe(lesion.id);
+  });
+
+  it('keeps the images already registered against that lesion', () => {
+    const lesion = store().createLesion();
+    store().registerImage(lesion.id, 'sop-1');
+
+    store().startStudy('1.2.840.113619.2.55.3');
+
+    expect(store().findings.find(f => f.id === lesion.id)?.imageCount).toBe(1);
+  });
+
+  it('still gives the study an overview to fall back to', () => {
+    store().createLesion();
+
+    store().startStudy('1.2.840.113619.2.55.3');
+
+    expect(store().findings.filter(f => f.kind === 'overview')).toHaveLength(1);
+  });
+
+  it('adopts the uid, so a later capture in the same study changes nothing', () => {
+    const lesion = store().createLesion();
+    store().startStudy('1.2.840.113619.2.55.3');
+
+    store().startStudy('1.2.840.113619.2.55.3');
+
+    expect(store().activeFindingId).toBe(lesion.id);
+  });
+});
+
 describe('opening a study', () => {
   it('starts with an overview, already active', () => {
     store().startStudy('1.2.3');

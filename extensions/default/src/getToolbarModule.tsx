@@ -47,10 +47,11 @@ export default function getToolbarModule({ commandsManager, servicesManager }: w
       name: 'ohif.progressDropdown',
       defaultComponent: ProgressDropdownWithService,
     },
-    // CreateReport#26: lesion selector shown next to the R button
+    // CreateReport#26: lesion selector shown next to the R button. Takes
+    // servicesManager so it can follow the active viewport's study.
     {
       name: 'cr.lesionChip',
-      defaultComponent: LesionChipWrapper,
+      defaultComponent: props => LesionChipWrapper({ ...props, servicesManager }),
     },
     {
       name: 'ohif.Toolbar',

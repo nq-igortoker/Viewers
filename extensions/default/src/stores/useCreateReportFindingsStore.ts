@@ -54,9 +54,12 @@ export interface CreateReportFindingsState {
   /** Whether this exact image is already attached to that finding. */
   hasImage: (id: string, imageKey: string) => boolean;
   /**
-   * Points the store at a study. A new study starts fresh, with an Overview
-   * finding active — the first capture is usually a scout or whole-study view,
-   * not a lesion.
+   * Points the store at a study.
+   *
+   * A *different* study starts fresh, with an Overview finding active — the
+   * first capture is usually a scout or whole-study view, not a lesion. Being
+   * told the study for the first time only adopts it: whatever the radiologist
+   * already picked from the chip survives.
    */
   startStudy: (studyInstanceUid: string) => void;
   /** Drops every finding. */
@@ -156,9 +159,24 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
       },
 
       startStudy: (studyInstanceUid: string) => {
-        if (get().studyInstanceUid === studyInstanceUid) {
+        const current = get().studyInstanceUid;
+        if (current === studyInstanceUid) {
           return;
         }
+
+        // Holding no study yet is not the same as holding a different one. The
+        // chip can be used before anything tells the store which study is on
+        // screen, and discarding the lesion the radiologist just picked — then
+        // filing their capture under Overview — is the wrong way to learn it.
+        if (current === null) {
+          set({ studyInstanceUid }, false, 'createReportFindings/adoptStudy');
+          const overview = get().ensureOverview();
+          if (get().activeFindingId === null) {
+            get().setActiveFinding(overview.id);
+          }
+          return;
+        }
+
         set(
           { studyInstanceUid, findings: [], activeFindingId: null },
           false,

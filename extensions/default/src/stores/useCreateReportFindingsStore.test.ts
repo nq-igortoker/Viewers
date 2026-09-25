@@ -88,6 +88,46 @@ describe('useCreateReportFindingsStore', () => {
   });
 });
 
+describe('ids across viewer sessions', () => {
+  // CreateReport maps `finding.id` onto its own findings per case
+  // (`resolveViewerFinding`). An id handed out twice by two different viewer
+  // sessions therefore files the second capture under the *first* session's
+  // lesion, and neither side shows that anything went wrong.
+  // A fresh module registry is the closest jest gets to a reloaded viewer: the
+  // store's module-level state starts over, exactly as it does on F5.
+  const freshSession = (): typeof useCreateReportFindingsStore => {
+    let store: typeof useCreateReportFindingsStore;
+    jest.isolateModules(() => {
+      store = jest.requireActual('./useCreateReportFindingsStore').useCreateReportFindingsStore;
+    });
+    return store;
+  };
+
+  it('does not reuse an id after the viewer is reloaded', () => {
+    const before = freshSession().getState().createLesion().id;
+    const after = freshSession().getState().createLesion().id;
+
+    expect(after).not.toBe(before);
+  });
+
+  it('keeps ids distinct across many sessions and many lesions', () => {
+    const ids = new Set<string>();
+    for (let session = 0; session < 5; session++) {
+      const state = freshSession().getState();
+      for (let lesion = 0; lesion < 4; lesion++) {
+        ids.add(state.createLesion().id);
+      }
+      ids.add(state.ensureOverview().id);
+    }
+
+    expect(ids.size).toBe(25);
+  });
+
+  it('still gives each finding in one session its own id', () => {
+    expect(store().createLesion().id).not.toBe(store().createLesion().id);
+  });
+});
+
 describe('adopting the study', () => {
   it('keeps a lesion the radiologist picked before the first capture', () => {
     const lesion = store().createLesion();

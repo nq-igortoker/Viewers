@@ -1,18 +1,22 @@
 import { isCreateReportConfigured } from './isCreateReportConfigured';
 
+type TestWindow = Window & { config?: { createReport?: { baseUrl?: string } } };
+
+const testWindow = window as TestWindow;
+
 describe('isCreateReportConfigured', () => {
   afterEach(() => {
-    delete (window as any).config;
+    delete testWindow.config;
   });
 
   it('is false when the app config has no createReport block', () => {
-    (window as any).config = {};
+    testWindow.config = {};
 
     expect(isCreateReportConfigured()).toBe(false);
   });
 
   it('is false when the block is there but names no base URL', () => {
-    (window as any).config = { createReport: {} };
+    testWindow.config = { createReport: {} };
 
     expect(isCreateReportConfigured()).toBe(false);
   });
@@ -22,7 +26,7 @@ describe('isCreateReportConfigured', () => {
   });
 
   it('is true once a base URL is configured', () => {
-    (window as any).config = { createReport: { baseUrl: 'https://app.create-report.com' } };
+    testWindow.config = { createReport: { baseUrl: 'https://app.create-report.com' } };
 
     expect(isCreateReportConfigured()).toBe(true);
   });

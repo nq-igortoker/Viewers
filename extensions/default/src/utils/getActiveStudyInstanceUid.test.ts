@@ -1,13 +1,22 @@
 import { getActiveStudyInstanceUid } from './getActiveStudyInstanceUid';
 
-const servicesManager = (grid: any, displaySets: Record<string, any> = {}): any => ({
-  services: {
-    viewportGridService: { getState: () => grid },
-    displaySetService: {
-      getDisplaySetByUID: (uid: string) => displaySets[uid],
+interface GridState {
+  activeViewportId: string;
+  viewports: Map<string, { displaySetInstanceUIDs?: string[] }>;
+}
+
+const servicesManager = (
+  grid: GridState,
+  displaySets: Record<string, { StudyInstanceUID?: string }> = {}
+): AppTypes.ServicesManager =>
+  ({
+    services: {
+      viewportGridService: { getState: () => grid },
+      displaySetService: {
+        getDisplaySetByUID: (uid: string) => displaySets[uid],
+      },
     },
-  },
-});
+  }) as unknown as AppTypes.ServicesManager;
 
 describe('getActiveStudyInstanceUid', () => {
   it('reads the study of the active viewport', () => {
@@ -56,6 +65,8 @@ describe('getActiveStudyInstanceUid', () => {
   });
 
   it('returns null rather than throwing when the services are not there yet', () => {
-    expect(getActiveStudyInstanceUid({ services: {} } as any)).toBeNull();
+    const empty = { services: {} } as unknown as AppTypes.ServicesManager;
+
+    expect(getActiveStudyInstanceUid(empty)).toBeNull();
   });
 });

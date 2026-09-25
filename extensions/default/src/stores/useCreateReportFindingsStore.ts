@@ -67,11 +67,34 @@ export interface CreateReportFindingsState {
 }
 
 /**
- * Ids only have to be unique within this session — CreateReport re-keys them.
- * A counter keeps them readable in the console and reproducible in tests.
+ * Finding ids must be unique across viewer *sessions*, not just within one.
+ *
+ * CreateReport maps `finding.id` onto its own findings per case
+ * (`resolveViewerFinding`), and has no way to tell one viewer session from the
+ * next. A running counter restarted at `f-1` on every page load, so after a
+ * reload the first new lesion reused an id the case already knew and its
+ * capture was filed under the *previous* session's lesion — silently, with the
+ * chip and the toast both naming the lesion the radiologist had just asked for.
+ *
+ * `crypto.randomUUID` needs a secure context and is absent under jsdom, so the
+ * two weaker sources are there to be used, not as decoration.
  */
-let sequence = 0;
-const nextId = (): string => `f-${++sequence}`;
+const randomId = (): string => {
+  const webCrypto = globalThis.crypto;
+
+  if (typeof webCrypto?.randomUUID === 'function') {
+    return webCrypto.randomUUID();
+  }
+
+  if (typeof webCrypto?.getRandomValues === 'function') {
+    const bytes = webCrypto.getRandomValues(new Uint8Array(16));
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+};
+
+const nextId = (): string => `f-${randomId()}`;
 
 const OVERVIEW_INDEX = 0;
 

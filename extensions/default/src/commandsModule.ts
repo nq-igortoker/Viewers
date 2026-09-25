@@ -36,6 +36,7 @@ import {
   type HandoffMode,
 } from './utils/createReportIncrementalHandoff';
 import { getViewportDicomContext } from './utils/getViewportDicomContext';
+import { useCreateReportFindingsStore, findingLabel } from './stores/useCreateReportFindingsStore';
 
 export type HangingProtocolParams = {
   protocolId?: string;
@@ -327,6 +328,40 @@ const commandsModule = ({
           studyInstanceUid: dicomContext?.dicomRef?.studyInstanceUid,
         });
 
+        // CreateReport#26: the image is filed under whichever finding the chip
+        // has active, so several views of one lesion need no interaction here.
+        // The chip normally adopts the study as soon as it is displayed; this
+        // call covers the case where R is pressed before that happened, and is
+        // a no-op once the uid matches. With nothing selected the capture goes
+        // to the Overview, which is where a scout or whole-study view belongs.
+        const studyInstanceUid = dicomContext?.dicomRef?.studyInstanceUid;
+        if (studyInstanceUid) {
+          useCreateReportFindingsStore.getState().startStudy(studyInstanceUid);
+        }
+        const { findings, activeFindingId, ensureOverview, setActiveFinding } =
+          useCreateReportFindingsStore.getState();
+        let finding = findings.find(f => f.id === activeFindingId);
+        if (!finding) {
+          finding = ensureOverview();
+          setActiveFinding(finding.id);
+        }
+
+        // An accidental second press of R would otherwise attach the very same
+        // instance twice. Capturing it for a *different* finding stays allowed,
+        // and so does a different slice or series for this one.
+        const imageKey = dicomContext?.dicomRef?.sopInstanceUid
+          ? `${dicomContext.dicomRef.sopInstanceUid}#${dicomContext.dicomRef.frameNumber ?? 1}`
+          : undefined;
+        if (imageKey && useCreateReportFindingsStore.getState().hasImage(finding.id, imageKey)) {
+          uiNotificationService.show({
+            title: 'Generate Report',
+            message: `This image is already attached to ${findingLabel(finding)}.`,
+            type: 'info',
+            duration: 3000,
+          });
+          return;
+        }
+
         // Send the image via postMessage
         const result = await sendViewportImage(
           config.baseUrl,
@@ -334,15 +369,17 @@ const commandsModule = ({
             ...imagePayload,
             dicomRef: dicomContext?.dicomRef,
             meta: dicomContext?.meta,
+            finding,
           },
           handoffMode
         );
 
         if (result.success) {
           const maxImages = getMaxImages();
+          useCreateReportFindingsStore.getState().registerImage(finding.id, imageKey);
           uiNotificationService.show({
             title: 'Generate Report',
-            message: `Image ${result.imageNumber}/${maxImages} sent to CreateReport`,
+            message: `Image ${result.imageNumber}/${maxImages} → ${findingLabel(finding)}`,
             type: 'success',
             duration: 2000,
           });

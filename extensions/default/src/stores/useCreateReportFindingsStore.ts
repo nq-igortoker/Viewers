@@ -37,10 +37,29 @@ export const findingLabel = (finding: Finding): string => {
   return finding.kind === 'overview' ? 'Overview' : `Lesion ${finding.index}`;
 };
 
-export interface CreateReportFindingsState {
+/** One study's findings and which of them is selected. */
+export interface StudySession {
   findings: Finding[];
   activeFindingId: string | null;
-  /** The study the current findings belong to. */
+}
+
+export interface CreateReportFindingsState {
+  /**
+   * Every study this session has seen, keyed by StudyInstanceUID.
+   *
+   * Reading a follow-up puts a current and a prior study on screen together,
+   * and clicking between their viewports tells the store about each in turn.
+   * Holding one list meant the second click discarded the first study's
+   * lesions; they are kept side by side now (CreateReport#129).
+   */
+  byStudy: Record<string, StudySession>;
+  /**
+   * The active study's findings, mirrored out of `byStudy` so components can
+   * keep subscribing to a plain array. Written only by `commit`.
+   */
+  findings: Finding[];
+  activeFindingId: string | null;
+  /** Which study is on screen, and therefore which session the mirrors show. */
   studyInstanceUid: string | null;
 
   /** Adds a lesion with the next running number and makes it active. */
@@ -56,13 +75,17 @@ export interface CreateReportFindingsState {
   /**
    * Points the store at a study.
    *
-   * A *different* study starts fresh, with an Overview finding active — the
-   * first capture is usually a scout or whole-study view, not a lesion. Being
-   * told the study for the first time only adopts it: whatever the radiologist
+   * A study seen for the first time starts with an Overview active — the first
+   * capture is usually a scout or whole-study view, not a lesion. A study seen
+   * before is *restored*, with its findings and its selection intact, because
+   * the radiologist may simply have clicked into the other viewport of a
+   * comparison and expects to come back to their work (CreateReport#129).
+   *
+   * Being told the study for the first time only adopts it: whatever was
    * already picked from the chip survives.
    */
   startStudy: (studyInstanceUid: string) => void;
-  /** Drops every finding. */
+  /** Drops every finding, of every study. */
   resetSession: () => void;
 }
 
@@ -98,15 +121,54 @@ const nextId = (): string => `f-${randomId()}`;
 
 const OVERVIEW_INDEX = 0;
 
+/**
+ * Where findings live before anything has said which study is on screen.
+ *
+ * The chip can be used that early, and the session is moved under the real uid
+ * the moment one arrives, so nothing the radiologist picked is lost.
+ */
+const PENDING_STUDY = '';
+
+const EMPTY_SESSION: StudySession = { findings: [], activeFindingId: null };
+
+/** The key whose session the mirrored `findings` / `activeFindingId` show. */
+const activeKey = (state: CreateReportFindingsState): string =>
+  state.studyInstanceUid ?? PENDING_STUDY;
+
+const sessionOf = (state: CreateReportFindingsState, key: string): StudySession =>
+  state.byStudy[key] ?? EMPTY_SESSION;
+
+/**
+ * Writes a session back and re-derives the mirrors.
+ *
+ * Every mutation goes through here, so `findings` and `activeFindingId` cannot
+ * drift from the session they are supposed to reflect.
+ */
+const commit = (
+  state: CreateReportFindingsState,
+  key: string,
+  session: StudySession
+): Partial<CreateReportFindingsState> => {
+  const byStudy = { ...state.byStudy, [key]: session };
+  const visible = key === activeKey(state) ? session : sessionOf(state, activeKey(state));
+  return { byStudy, findings: visible.findings, activeFindingId: visible.activeFindingId };
+};
+
 export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
   devtools(
     (set, get) => ({
+      byStudy: {},
       findings: [],
       activeFindingId: null,
       studyInstanceUid: null,
 
       createLesion: (label?: string) => {
-        const lesionCount = get().findings.filter(f => f.kind === 'lesion').length;
+        const state = get();
+        const key = activeKey(state);
+        const session = sessionOf(state, key);
+        // Numbered within its own study: the prior's lesions are not the
+        // current study's, so each starts at 1.
+        const lesionCount = session.findings.filter(f => f.kind === 'lesion').length;
         const finding: Finding = {
           id: nextId(),
           index: lesionCount + 1,
@@ -117,10 +179,11 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         };
 
         set(
-          state => ({
-            findings: [...state.findings, finding],
-            activeFindingId: finding.id,
-          }),
+          current =>
+            commit(current, key, {
+              findings: [...sessionOf(current, key).findings, finding],
+              activeFindingId: finding.id,
+            }),
           false,
           'createReportFindings/createLesion'
         );
@@ -129,7 +192,9 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
       },
 
       ensureOverview: () => {
-        const existing = get().findings.find(f => f.kind === 'overview');
+        const state = get();
+        const key = activeKey(state);
+        const existing = sessionOf(state, key).findings.find(f => f.kind === 'overview');
         if (existing) {
           return existing;
         }
@@ -143,7 +208,11 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         };
 
         set(
-          state => ({ findings: [...state.findings, finding] }),
+          current =>
+            commit(current, key, {
+              ...sessionOf(current, key),
+              findings: [...sessionOf(current, key).findings, finding],
+            }),
           false,
           'createReportFindings/ensureOverview'
         );
@@ -152,32 +221,42 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
       },
 
       setActiveFinding: (id: string) => {
-        if (!get().findings.some(f => f.id === id)) {
+        const state = get();
+        const key = activeKey(state);
+        if (!sessionOf(state, key).findings.some(f => f.id === id)) {
           return;
         }
-        set({ activeFindingId: id }, false, 'createReportFindings/setActiveFinding');
+        set(
+          current => commit(current, key, { ...sessionOf(current, key), activeFindingId: id }),
+          false,
+          'createReportFindings/setActiveFinding'
+        );
       },
 
       registerImage: (id: string, imageKey?: string) => {
+        const key = activeKey(get());
         set(
-          state => ({
-            findings: state.findings.map(f =>
-              f.id === id
-                ? {
-                    ...f,
-                    imageCount: f.imageCount + 1,
-                    imageKeys: imageKey ? [...f.imageKeys, imageKey] : f.imageKeys,
-                  }
-                : f
-            ),
-          }),
+          current =>
+            commit(current, key, {
+              ...sessionOf(current, key),
+              findings: sessionOf(current, key).findings.map(f =>
+                f.id === id
+                  ? {
+                      ...f,
+                      imageCount: f.imageCount + 1,
+                      imageKeys: imageKey ? [...f.imageKeys, imageKey] : f.imageKeys,
+                    }
+                  : f
+              ),
+            }),
           false,
           'createReportFindings/registerImage'
         );
       },
 
       hasImage: (id: string, imageKey: string) => {
-        const finding = get().findings.find(f => f.id === id);
+        const state = get();
+        const finding = sessionOf(state, activeKey(state)).findings.find(f => f.id === id);
         return !!finding && finding.imageKeys.includes(imageKey);
       },
 
@@ -191,8 +270,22 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         // chip can be used before anything tells the store which study is on
         // screen, and discarding the lesion the radiologist just picked — then
         // filing their capture under Overview — is the wrong way to learn it.
+        // The pending session simply moves under the uid it turned out to be.
         if (current === null) {
-          set({ studyInstanceUid }, false, 'createReportFindings/adoptStudy');
+          set(
+            state => {
+              const pending = sessionOf(state, PENDING_STUDY);
+              const { [PENDING_STUDY]: _moved, ...rest } = state.byStudy;
+              return {
+                byStudy: { ...rest, [studyInstanceUid]: pending },
+                studyInstanceUid,
+                findings: pending.findings,
+                activeFindingId: pending.activeFindingId,
+              };
+            },
+            false,
+            'createReportFindings/adoptStudy'
+          );
           const overview = get().ensureOverview();
           if (get().activeFindingId === null) {
             get().setActiveFinding(overview.id);
@@ -200,17 +293,30 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
           return;
         }
 
+        // Another study became active. Its findings are restored if it has
+        // been seen; otherwise it starts with an Overview. Either way the
+        // study being left keeps everything — clicking into the prior of a
+        // comparison must not cost the radiologist the current study's work.
+        const seen = get().byStudy[studyInstanceUid];
         set(
-          { studyInstanceUid, findings: [], activeFindingId: null },
+          state => ({
+            studyInstanceUid,
+            findings: (seen ?? EMPTY_SESSION).findings,
+            activeFindingId: (seen ?? EMPTY_SESSION).activeFindingId,
+            byStudy: seen ? state.byStudy : { ...state.byStudy, [studyInstanceUid]: EMPTY_SESSION },
+          }),
           false,
-          'createReportFindings/startStudy'
+          seen ? 'createReportFindings/resumeStudy' : 'createReportFindings/startStudy'
         );
-        get().setActiveFinding(get().ensureOverview().id);
+
+        if (!seen) {
+          get().setActiveFinding(get().ensureOverview().id);
+        }
       },
 
       resetSession: () => {
         set(
-          { findings: [], activeFindingId: null, studyInstanceUid: null },
+          { byStudy: {}, findings: [], activeFindingId: null, studyInstanceUid: null },
           false,
           'createReportFindings/resetSession'
         );

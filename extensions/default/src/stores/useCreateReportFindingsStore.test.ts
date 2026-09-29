@@ -183,7 +183,7 @@ describe('opening a study', () => {
     expect(store().createLesion().index).toBe(1);
   });
 
-  it('replaces the findings with a fresh overview when the study changes', () => {
+  it('shows a fresh overview for a study seen for the first time', () => {
     store().startStudy('1.2.3');
     store().createLesion();
 
@@ -248,5 +248,100 @@ describe('findingLabel', () => {
 
   it('prefers a label the user gave over the number', () => {
     expect(findingLabel(store().createLesion('Liver segment 7'))).toBe('Liver segment 7');
+  });
+});
+
+describe('two studies on screen at once', () => {
+  // Reading a follow-up means a current and a prior study side by side.
+  // Clicking into the prior viewport tells the store about that study, and
+  // that must not cost the radiologist the lesions declared on the current one
+  // (CreateReport#129).
+  const CURRENT = '1.2.840.113619.2.55.current';
+  const PRIOR = '1.2.840.113619.2.55.prior';
+
+  it('keeps the first study\'s findings when another study becomes active', () => {
+    store().startStudy(CURRENT);
+    const lesion = store().createLesion();
+
+    store().startStudy(PRIOR);
+    store().startStudy(CURRENT);
+
+    expect(store().findings.map(f => f.id)).toContain(lesion.id);
+  });
+
+  it('restores the active selection on the way back', () => {
+    store().startStudy(CURRENT);
+    const lesion = store().createLesion();
+
+    store().startStudy(PRIOR);
+    store().startStudy(CURRENT);
+
+    expect(store().activeFindingId).toBe(lesion.id);
+  });
+
+  it('restores the images already registered against a finding', () => {
+    store().startStudy(CURRENT);
+    const lesion = store().createLesion();
+    store().registerImage(lesion.id, 'sop-1#1');
+
+    store().startStudy(PRIOR);
+    store().startStudy(CURRENT);
+
+    const restored = store().findings.find(f => f.id === lesion.id);
+    expect(restored?.imageCount).toBe(1);
+    expect(store().hasImage(lesion.id, 'sop-1#1')).toBe(true);
+  });
+
+  it('shows only the active study\'s findings, not both studies at once', () => {
+    store().startStudy(CURRENT);
+    store().createLesion();
+    store().startStudy(PRIOR);
+    store().createLesion();
+
+    expect(store().findings.filter(f => f.kind === 'lesion')).toHaveLength(1);
+  });
+
+  it('numbers each study\'s lesions from one', () => {
+    store().startStudy(CURRENT);
+    store().createLesion();
+    store().createLesion();
+
+    store().startStudy(PRIOR);
+
+    expect(store().createLesion().index).toBe(1);
+  });
+
+  it('gives the prior study its own overview rather than the current one\'s', () => {
+    store().startStudy(CURRENT);
+    const currentOverview = store().ensureOverview();
+
+    store().startStudy(PRIOR);
+
+    expect(store().ensureOverview().id).not.toBe(currentOverview.id);
+  });
+
+  it('files a capture under the finding active for the study being captured', () => {
+    store().startStudy(CURRENT);
+    const currentLesion = store().createLesion();
+    store().startStudy(PRIOR);
+    const priorLesion = store().createLesion();
+
+    // Back on the current study, as a capture there would do.
+    store().startStudy(CURRENT);
+
+    expect(store().activeFindingId).toBe(currentLesion.id);
+    expect(store().activeFindingId).not.toBe(priorLesion.id);
+  });
+
+  it('clears every study on resetSession, not just the active one', () => {
+    store().startStudy(CURRENT);
+    store().createLesion();
+    store().startStudy(PRIOR);
+    store().createLesion();
+
+    store().resetSession();
+    store().startStudy(CURRENT);
+
+    expect(store().findings.filter(f => f.kind === 'lesion')).toHaveLength(0);
   });
 });

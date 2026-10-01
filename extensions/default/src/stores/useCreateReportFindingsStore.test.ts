@@ -150,12 +150,20 @@ describe('adopting the study', () => {
     expect(store().findings.find(f => f.id === lesion.id)?.imageCount).toBe(1);
   });
 
-  it('still gives the study an overview to fall back to', () => {
-    store().createLesion();
+  it('does not add a second finding when one was already picked', () => {
+    const picked = store().createLesion();
 
     store().startStudy('1.2.840.113619.2.55.3');
 
-    expect(store().findings.filter(f => f.kind === 'overview')).toHaveLength(1);
+    expect(store().findings.filter(f => f.kind === 'lesion')).toHaveLength(1);
+    expect(store().activeFindingId).toBe(picked.id);
+  });
+
+  it('still has an overview to fall back to, once one is asked for', () => {
+    store().createLesion();
+    store().startStudy('1.2.840.113619.2.55.3');
+
+    expect(store().ensureOverview().kind).toBe('overview');
   });
 
   it('adopts the uid, so a later capture in the same study changes nothing', () => {
@@ -169,28 +177,48 @@ describe('adopting the study', () => {
 });
 
 describe('opening a study', () => {
-  it('starts with an overview, already active', () => {
+  // The radiologist almost always starts on a finding, so starting on
+  // Overview cost one chip interaction per study at the moment they wanted
+  // to capture (CreateReport#141). Overview is still a deliberate choice for
+  // a scout or whole-study view.
+  it('starts on Finding 1, already active', () => {
     store().startStudy('1.2.3');
 
     expect(store().findings).toHaveLength(1);
-    expect(store().findings[0].kind).toBe('overview');
+    expect(store().findings[0].kind).toBe('lesion');
+    expect(store().findings[0].index).toBe(1);
     expect(store().activeFindingId).toBe(store().findings[0].id);
   });
 
-  it('still numbers the first lesion 1', () => {
+  it('does not create an overview until one is asked for', () => {
     store().startStudy('1.2.3');
 
-    expect(store().createLesion().index).toBe(1);
+    expect(store().findings.some(f => f.kind === 'overview')).toBe(false);
   });
 
-  it('shows a fresh overview for a study seen for the first time', () => {
+  it('numbers the next finding 2, since Finding 1 already exists', () => {
+    store().startStudy('1.2.3');
+
+    expect(store().createLesion().index).toBe(2);
+  });
+
+  it('still offers Overview when it is chosen', () => {
+    store().startStudy('1.2.3');
+    const overview = store().ensureOverview();
+
+    expect(overview.kind).toBe('overview');
+    expect(overview.index).toBe(0);
+  });
+
+  it('opens a study seen for the first time on its own Finding 1', () => {
     store().startStudy('1.2.3');
     store().createLesion();
 
     store().startStudy('9.8.7');
 
     expect(store().findings).toHaveLength(1);
-    expect(store().findings[0].kind).toBe('overview');
+    expect(store().findings[0].kind).toBe('lesion');
+    expect(store().findings[0].index).toBe(1);
   });
 
   it('keeps the findings when the same study is reopened', () => {
@@ -300,23 +328,28 @@ describe('two studies on screen at once', () => {
     expect(store().hasImage(lesion.id, 'sop-1#1')).toBe(true);
   });
 
-  it('shows only the active study\'s findings, not both studies at once', () => {
+  it("shows only the active study's findings, not both studies at once", () => {
     store().startStudy(CURRENT);
-    store().createLesion();
+    const currentIds = [store().findings[0].id, store().createLesion().id];
     store().startStudy(PRIOR);
     store().createLesion();
 
-    expect(store().findings.filter(f => f.kind === 'lesion')).toHaveLength(1);
+    const visible = store().findings.map(f => f.id);
+    expect(visible).toHaveLength(2);
+    expect(visible.some(id => currentIds.includes(id))).toBe(false);
   });
 
-  it('numbers each study\'s lesions from one', () => {
+  it("numbers each study's findings from one", () => {
     store().startStudy(CURRENT);
     store().createLesion();
     store().createLesion();
 
     store().startStudy(PRIOR);
 
-    expect(store().createLesion().index).toBe(1);
+    // The prior opens on its own Finding 1 rather than continuing the
+    // current study's count, and the next one it is given is 2.
+    expect(store().findings.map(f => f.index)).toEqual([1]);
+    expect(store().createLesion().index).toBe(2);
   });
 
   it('gives the prior study its own overview rather than the current one\'s', () => {
@@ -347,9 +380,14 @@ describe('two studies on screen at once', () => {
     store().startStudy(PRIOR);
     store().createLesion();
 
+    const before = store().byStudy[CURRENT].findings.map(f => f.id);
     store().resetSession();
-    store().startStudy(CURRENT);
+    expect(store().byStudy).toEqual({});
 
-    expect(store().findings.filter(f => f.kind === 'lesion')).toHaveLength(0);
+    // Reopening gives a brand-new Finding 1, not the one from before.
+    store().startStudy(CURRENT);
+    const after = store().findings;
+    expect(after).toHaveLength(1);
+    expect(before).not.toContain(after[0].id);
   });
 });

@@ -76,6 +76,14 @@ export interface CreateReportFindingsState {
   createLesion: (label?: string) => Finding;
   /** Returns the study's single overview finding, creating it on first use. */
   ensureOverview: () => Finding;
+  /**
+   * Returns the study's first numbered finding, creating it on first use.
+   *
+   * Named for the word the UI uses rather than matching `createLesion`
+   * (CreateReport#144): `lesion` survives only where it is already on the
+   * wire, and a symbol added today has no reason to inherit it.
+   */
+  ensureFirstFinding: () => Finding;
   /** Activates an existing finding. Unknown ids are ignored. */
   setActiveFinding: (id: string) => void;
   /** Records that a key image was captured against a finding. */
@@ -85,11 +93,16 @@ export interface CreateReportFindingsState {
   /**
    * Points the store at a study.
    *
-   * A study seen for the first time starts with an Overview active — the first
-   * capture is usually a scout or whole-study view, not a single finding. A study seen
-   * before is *restored*, with its findings and its selection intact, because
-   * the radiologist may simply have clicked into the other viewport of a
-   * comparison and expects to come back to their work (CreateReport#129).
+   * A study seen for the first time starts on Finding 1 — the radiologist
+   * almost always begins with a finding, and starting on Overview cost one
+   * chip interaction per study at the moment they wanted to capture
+   * (CreateReport#141). Overview is still there, created the moment it is
+   * chosen, for a scout or whole-study view.
+   *
+   * A study seen before is *restored*, with its findings and its selection
+   * intact, because the radiologist may simply have clicked into the other
+   * viewport of a comparison and expects to come back to their work
+   * (CreateReport#129).
    *
    * Being told the study for the first time only adopts it: whatever was
    * already picked from the chip survives.
@@ -231,6 +244,13 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         return finding;
       },
 
+      ensureFirstFinding: () => {
+        const state = get();
+        const key = activeKey(state);
+        const existing = sessionOf(state, key).findings.find(f => f.kind === 'lesion');
+        return existing ?? get().createLesion();
+      },
+
       setActiveFinding: (id: string) => {
         const state = get();
         const key = activeKey(state);
@@ -297,15 +317,17 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
             false,
             'createReportFindings/adoptStudy'
           );
-          const overview = get().ensureOverview();
+          // Whatever was picked from the chip before the study was known
+          // stays picked; this only guarantees there is something to pick.
+          const first = get().ensureFirstFinding();
           if (get().activeFindingId === null) {
-            get().setActiveFinding(overview.id);
+            get().setActiveFinding(first.id);
           }
           return;
         }
 
         // Another study became active. Its findings are restored if it has
-        // been seen; otherwise it starts with an Overview. Either way the
+        // been seen; otherwise it starts on Finding 1. Either way the
         // study being left keeps everything — clicking into the prior of a
         // comparison must not cost the radiologist the current study's work.
         const seen = get().byStudy[studyInstanceUid];
@@ -321,7 +343,7 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         );
 
         if (!seen) {
-          get().setActiveFinding(get().ensureOverview().id);
+          get().setActiveFinding(get().ensureFirstFinding().id);
         }
       },
 

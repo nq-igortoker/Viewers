@@ -5,16 +5,21 @@
  * wire format can be tested without a window: this function is pure.
  *
  * Versioning (CreateReport#26): v3 adds a single field, `finding`, naming the
- * lesion the image belongs to. A message without a finding stays v2-shaped, so
- * nothing changes for viewers or receivers that do not use the lesion chip.
+ * finding the image belongs to. A message without a finding stays v2-shaped,
+ * so nothing changes for viewers or receivers that do not use the chip.
  */
 
 import type { DicomRef, DicomMetaExcerpt } from './getViewportDicomContext';
 
+/**
+ * `lesion` is the historical name for what the UI now calls a Finding
+ * (CreateReport#144). It stays on the wire: renaming it would need a
+ * coordinated viewer/app release and a CreateReport data migration.
+ */
 export type FindingKind = 'lesion' | 'overview';
 
 /**
- * The lesion an image was captured for, as it crosses the window boundary.
+ * The finding an image was captured for, as it crosses the window boundary.
  *
  * `id` is stable only within one viewer session — CreateReport maps it to its
  * own case-scoped ids and is the source of truth for regrouping.

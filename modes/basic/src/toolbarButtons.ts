@@ -642,11 +642,13 @@ const toolbarButtons: Button[] = [
     },
   },
   {
-    // CreateReport#26: names the lesion the next R is captured for
+    // CreateReport#26: names the finding the next R is captured for. The id
+    // and uiType keep the old word on purpose — they are wiring, not labels
+    // (CreateReport#144).
     id: 'LesionChip',
     uiType: 'cr.lesionChip',
     props: {
-      label: 'Lesion',
+      label: 'Finding',
       evaluate: 'evaluate.action',
     },
   },

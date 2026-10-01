@@ -238,8 +238,16 @@ describe('capturing the same image twice', () => {
 });
 
 describe('findingLabel', () => {
-  it('numbers an unnamed lesion', () => {
-    expect(findingLabel(store().createLesion())).toBe('Lesion 1');
+  // The user-facing word is "Finding", not "Lesion" (CreateReport#144): a group
+  // may hold a normal variant or a region that was checked and found
+  // unremarkable, and "Lesion 2" asserts a pathology the radiologist has not.
+  it('numbers an unnamed finding', () => {
+    expect(findingLabel(store().createLesion())).toBe('Finding 1');
+  });
+
+  it('keeps numbering findings past the first', () => {
+    store().createLesion();
+    expect(findingLabel(store().createLesion())).toBe('Finding 2');
   });
 
   it('names the overview', () => {

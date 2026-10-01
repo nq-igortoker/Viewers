@@ -329,7 +329,7 @@ const commandsModule = ({
         });
 
         // CreateReport#26: the image is filed under whichever finding the chip
-        // has active, so several views of one lesion need no interaction here.
+        // has active, so several views of one finding need no interaction here.
         // The chip normally adopts the study as soon as it is displayed; this
         // call covers the case where R is pressed before that happened, and is
         // a no-op once the uid matches. With nothing selected the capture goes

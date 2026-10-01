@@ -19,19 +19,23 @@ import { getActiveStudyInstanceUid } from '../utils/getActiveStudyInstanceUid';
 import { isCreateReportConfigured } from '../utils/isCreateReportConfigured';
 
 /**
- * The lesion selector that sits next to the R button (CreateReport#26).
+ * The finding selector that sits next to the R button (CreateReport#26).
  *
  * R captures the viewport and files it under whatever this chip has active, so
- * several views of one lesion cost no interaction here at all — the chip is
- * only touched when the lesion changes.
+ * several views of one finding cost no interaction here at all — the chip is
+ * only touched when the finding changes.
  *
  * Opening a study starts on Overview: the first capture is usually a scout or
- * whole-study view rather than a lesion.
+ * whole-study view rather than a single finding.
  *
  * The chip also owns the session boundary. It follows the active viewport, so
  * the store knows which study is on screen from the moment one is displayed
- * rather than from the first press of R — otherwise a lesion picked before that
- * first capture is thrown away when the study finally becomes known.
+ * rather than from the first press of R — otherwise a finding picked before
+ * that first capture is thrown away when the study finally becomes known.
+ *
+ * `Lesion` survives in the file and symbol names only: renaming them would
+ * touch the toolbar id and the wire contract for no visible gain
+ * (CreateReport#144).
  */
 
 const imageCountLabel = (finding: Finding): string | null => {
@@ -93,7 +97,7 @@ export default function LesionChipWrapper({
   const triggerLabel = active ? findingLabel(active) : 'Overview';
 
   // Deployments without a `createReport` block cannot send anywhere — R answers
-  // "CreateReport base URL is not configured". Offering to name the lesion for
+  // "CreateReport base URL is not configured". Offering to name the finding for
   // that capture would be a promise the viewer cannot keep.
   if (!isCreateReportConfigured()) {
     return null;
@@ -108,7 +112,7 @@ export default function LesionChipWrapper({
             variant="outline"
             size="sm"
             disabled={disabled}
-            aria-label={`Active finding: ${triggerLabel}. Change or create a lesion.`}
+            aria-label={`Active finding: ${triggerLabel}. Change or create a finding.`}
           >
             <span>{triggerLabel}</span>
             <Icons.ByName name="chevron-down" />
@@ -142,7 +146,7 @@ export default function LesionChipWrapper({
 
           <DropdownMenuSeparator />
 
-          <DropdownMenuItem onSelect={onNewLesion}>+ New lesion</DropdownMenuItem>
+          <DropdownMenuItem onSelect={onNewLesion}>+ New finding</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

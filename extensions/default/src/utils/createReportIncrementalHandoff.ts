@@ -13,7 +13,7 @@
  *   named tab and posts there. Used when there is no (valid) opener.
  *
  * Messages are CR_ADD_IMAGE v2 (screenshot + `dicomRef` + a curated `meta`
- * excerpt) or v3, which adds `finding` — the lesion the image was captured
+ * excerpt) or v3, which adds `finding` — the finding the image was captured
  * for (CreateReport#26). Receivers ignore fields they do not know, so a v3
  * message degrades to v2 behaviour and the images still arrive.
  */

@@ -4,13 +4,17 @@ import { devtools } from 'zustand/middleware';
 import type { FindingKind, FindingRef } from '../utils/buildCreateReportMessage';
 
 /**
- * Session-scoped lesion findings for the CreateReport handoff (CreateReport#26).
+ * Session-scoped findings for the CreateReport handoff (CreateReport#26).
  *
- * The radiologist declares which lesion a key image belongs to at capture time,
- * because it cannot be inferred: the same lesion looks completely different in
- * T1 and T2. This store holds that declaration for the length of one viewer
- * session; CreateReport owns the durable version and is where regrouping
- * happens. Nothing here is ever sent back from CreateReport.
+ * The radiologist declares which finding a key image belongs to at capture
+ * time, because it cannot be inferred: the same lesion looks completely
+ * different in T1 and T2. This store holds that declaration for the length of
+ * one viewer session; CreateReport owns the durable version and is where
+ * regrouping happens. Nothing here is ever sent back from CreateReport.
+ *
+ * `lesion` survives as the `kind` value and in `createLesion`: it is the
+ * historical name for a finding, kept because it is on the wire
+ * (CreateReport#144).
  */
 
 const DEBUG_STORE = false;
@@ -29,12 +33,18 @@ export interface Finding extends FindingRef {
 /**
  * How a finding is named on screen and in notifications: the radiologist's own
  * label when they gave one, otherwise the running number.
+ *
+ * The word is "Finding", not "Lesion" (CreateReport#144). A group can hold a
+ * normal variant, a diffuse change or a region that was checked and found
+ * unremarkable, so "Lesion 2" would assert a pathology the radiologist has
+ * not. CreateReport shows the same word on the board, in both of its UI
+ * languages, so the two monitors agree.
  */
 export const findingLabel = (finding: Finding): string => {
   if (finding.label) {
     return finding.label;
   }
-  return finding.kind === 'overview' ? 'Overview' : `Lesion ${finding.index}`;
+  return finding.kind === 'overview' ? 'Overview' : `Finding ${finding.index}`;
 };
 
 /** One study's findings and which of them is selected. */
@@ -50,7 +60,7 @@ export interface CreateReportFindingsState {
    * Reading a follow-up puts a current and a prior study on screen together,
    * and clicking between their viewports tells the store about each in turn.
    * Holding one list meant the second click discarded the first study's
-   * lesions; they are kept side by side now (CreateReport#129).
+   * findings; they are kept side by side now (CreateReport#129).
    */
   byStudy: Record<string, StudySession>;
   /**
@@ -62,7 +72,7 @@ export interface CreateReportFindingsState {
   /** Which study is on screen, and therefore which session the mirrors show. */
   studyInstanceUid: string | null;
 
-  /** Adds a lesion with the next running number and makes it active. */
+  /** Adds a numbered finding with the next running number and makes it active. */
   createLesion: (label?: string) => Finding;
   /** Returns the study's single overview finding, creating it on first use. */
   ensureOverview: () => Finding;
@@ -76,7 +86,7 @@ export interface CreateReportFindingsState {
    * Points the store at a study.
    *
    * A study seen for the first time starts with an Overview active — the first
-   * capture is usually a scout or whole-study view, not a lesion. A study seen
+   * capture is usually a scout or whole-study view, not a single finding. A study seen
    * before is *restored*, with its findings and its selection intact, because
    * the radiologist may simply have clicked into the other viewport of a
    * comparison and expects to come back to their work (CreateReport#129).
@@ -95,9 +105,10 @@ export interface CreateReportFindingsState {
  * CreateReport maps `finding.id` onto its own findings per case
  * (`resolveViewerFinding`), and has no way to tell one viewer session from the
  * next. A running counter restarted at `f-1` on every page load, so after a
- * reload the first new lesion reused an id the case already knew and its
- * capture was filed under the *previous* session's lesion — silently, with the
- * chip and the toast both naming the lesion the radiologist had just asked for.
+ * reload the first new finding reused an id the case already knew and its
+ * capture was filed under the *previous* session's finding — silently, with
+ * the chip and the toast both naming the one the radiologist had just asked
+ * for.
  *
  * `crypto.randomUUID` needs a secure context and is absent under jsdom, so the
  * two weaker sources are there to be used, not as decoration.
@@ -166,7 +177,7 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         const state = get();
         const key = activeKey(state);
         const session = sessionOf(state, key);
-        // Numbered within its own study: the prior's lesions are not the
+        // Numbered within its own study: the prior's findings are not the
         // current study's, so each starts at 1.
         const lesionCount = session.findings.filter(f => f.kind === 'lesion').length;
         const finding: Finding = {
@@ -268,7 +279,7 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
 
         // Holding no study yet is not the same as holding a different one. The
         // chip can be used before anything tells the store which study is on
-        // screen, and discarding the lesion the radiologist just picked — then
+        // screen, and discarding the finding the radiologist just picked — then
         // filing their capture under Overview — is the wrong way to learn it.
         // The pending session simply moves under the uid it turned out to be.
         if (current === null) {

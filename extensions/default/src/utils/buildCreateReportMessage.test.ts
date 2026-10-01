@@ -17,7 +17,7 @@ describe('buildCreateReportMessage', () => {
   it('sends version 3 carrying the finding when one is active', () => {
     const message = buildCreateReportMessage({
       ...basePayload(),
-      finding: { id: 'a3f9', index: 2, kind: 'lesion', label: 'Lesion 2' },
+      finding: { id: 'a3f9', index: 2, kind: 'lesion', label: 'Liver segment 7' },
     });
 
     expect(message.version).toBe(3);
@@ -25,7 +25,7 @@ describe('buildCreateReportMessage', () => {
       id: 'a3f9',
       index: 2,
       kind: 'lesion',
-      label: 'Lesion 2',
+      label: 'Liver segment 7',
     });
   });
 

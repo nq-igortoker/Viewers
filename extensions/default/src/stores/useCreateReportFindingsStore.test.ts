@@ -391,3 +391,80 @@ describe('two studies on screen at once', () => {
     expect(before).not.toContain(after[0].id);
   });
 });
+
+describe('numbering continues from the app (CreateReport#140)', () => {
+  // CreateReport tells the viewer the next free finding number for the case
+  // behind a study (CR_HELLO), so a reload — or a study whose case already
+  // has findings from the board or an earlier session — does not hand out a
+  // number the case already uses.
+  it('starts the first finding at the number the app provided', () => {
+    store().setBaseFindingNumber('1.2.3', 4);
+
+    store().startStudy('1.2.3');
+
+    expect(store().findings[0].index).toBe(4);
+  });
+
+  it('keeps counting up from that base for later findings', () => {
+    store().setBaseFindingNumber('1.2.3', 4);
+    store().startStudy('1.2.3');
+
+    expect(store().createLesion().index).toBe(5);
+  });
+
+  it('defaults to Finding 1 when the app never sends a base number', () => {
+    store().startStudy('1.2.3');
+
+    expect(store().findings[0].index).toBe(1);
+  });
+
+  it('applies a base number that arrives before the study is known', () => {
+    // The postMessage handshake can resolve before OHIF reports its study.
+    store().setBaseFindingNumber('1.2.3', 7);
+
+    store().startStudy('1.2.3');
+
+    expect(store().findings[0].index).toBe(7);
+  });
+
+  it('keeps a lesion picked before the study was known, then numbers the next one from the base', () => {
+    const picked = store().createLesion();
+    store().setBaseFindingNumber('1.2.3', 7);
+
+    store().startStudy('1.2.3');
+
+    // The pre-existing pick is unaffected...
+    expect(store().activeFindingId).toBe(picked.id);
+    expect(store().findings.find(f => f.id === picked.id)?.index).toBe(1);
+    // ...but a genuinely new one respects the base the app sent.
+    expect(store().createLesion().index).toBe(8);
+  });
+
+  it('only applies the base number to the study it was sent for', () => {
+    store().setBaseFindingNumber('1.2.3', 9);
+
+    store().startStudy('9.8.7');
+
+    expect(store().findings[0].index).toBe(1);
+  });
+
+  it('updates the base for a study already open, without renumbering existing findings', () => {
+    store().startStudy('1.2.3');
+    const autoFirst = store().findings[0];
+
+    store().setBaseFindingNumber('1.2.3', 5);
+
+    expect(store().findings.find(f => f.id === autoFirst.id)?.index).toBe(1);
+    expect(store().createLesion().index).toBe(6);
+  });
+
+  it('applies a late base number to a study that is not the active one', () => {
+    store().startStudy('1.2.3');
+    store().startStudy('9.8.7');
+
+    store().setBaseFindingNumber('1.2.3', 6);
+    store().startStudy('1.2.3');
+
+    expect(store().createLesion().index).toBe(7);
+  });
+});

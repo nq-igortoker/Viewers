@@ -16,12 +16,19 @@
  * excerpt) or v3, which adds `finding` — the finding the image was captured
  * for (CreateReport#26). Receivers ignore fields they do not know, so a v3
  * message degrades to v2 behaviour and the images still arrive.
+ *
+ * CR_HELLO may also carry `studyInstanceUid` + `nextFindingNumber`
+ * (CreateReport#140): the finding number the app's case for that study is
+ * already up to, so a new lesion in the chip does not reuse one the case
+ * already has — on a reload, or when the case already held findings from the
+ * board before this session started.
  */
 
 import {
   buildCreateReportMessage,
   type CreateReportImagePayload,
 } from './buildCreateReportMessage';
+import { useCreateReportFindingsStore } from '../stores/useCreateReportFindingsStore';
 
 // ============================================================================
 // Types
@@ -105,6 +112,25 @@ export const initAppHandshake = (allowedAppOrigins: string[]): void => {
     appWindow = event.source as Window;
     appOrigin = event.origin;
     console.log('🤝 CreateReport main window connected:', appOrigin);
+
+    const { studyInstanceUid, nextFindingNumber } = event.data as {
+      studyInstanceUid?: unknown;
+      nextFindingNumber?: unknown;
+    };
+    if (
+      typeof studyInstanceUid === 'string' &&
+      studyInstanceUid.length > 0 &&
+      typeof nextFindingNumber === 'number' &&
+      Number.isInteger(nextFindingNumber) &&
+      nextFindingNumber > 0
+    ) {
+      console.log(
+        `🔢 CreateReport: next finding number for ${studyInstanceUid} is ${nextFindingNumber}`
+      );
+      useCreateReportFindingsStore
+        .getState()
+        .setBaseFindingNumber(studyInstanceUid, nextFindingNumber);
+    }
   });
 
   try {

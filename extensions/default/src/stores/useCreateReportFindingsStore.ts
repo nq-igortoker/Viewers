@@ -52,13 +52,13 @@ export interface StudySession {
   findings: Finding[];
   activeFindingId: string | null;
   /**
-   * The finding number a new lesion in this study starts counting from
+   * The index the next lesion `createLesion` adds to this study will get
    * (CreateReport#140). 1 until CreateReport says otherwise: a case already
    * holding findings — from the grouping board or an earlier viewer session —
    * would otherwise have its first *viewer-session* lesion collide with one
    * it already has, labelled identically but filed as a second, separate one.
    */
-  baseFindingNumber: number;
+  nextLesionNumber: number;
 }
 
 export interface CreateReportFindingsState {
@@ -105,12 +105,16 @@ export interface CreateReportFindingsState {
   /** Whether this exact image is already attached to that finding. */
   hasImage: (id: string, imageKey: string) => boolean;
   /**
-   * Sets the finding number new lesions in a study should start counting
-   * from (CreateReport#140), from the CR_HELLO handshake. Existing findings
-   * keep their number; only lesions created after this call are affected. If
-   * the study has not started yet, the number is queued and applied once it
-   * does — `studyInstanceUid` is a case's, decided by CreateReport, so it is
-   * never the same race as the chip being used before OHIF reports its study.
+   * Applies a finding number CreateReport sent for a study (CreateReport#140,
+   * CR_HELLO). A lesion that already has an image keeps its number —
+   * CreateReport has already assigned it one of its own — but one that does
+   * not is renumbered from this base, since nothing downstream can disagree
+   * about a finding CreateReport has never heard of (see `applyFindingNumber`
+   * for why this matters: CreateReport#141's auto-created Finding 1 can
+   * exist before this arrives). If the study has not started yet, the
+   * number is queued and applied once it does — `studyInstanceUid` is a
+   * case's, decided by CreateReport, so it is never the same race as the
+   * chip being used before OHIF reports its study.
    */
   setBaseFindingNumber: (studyInstanceUid: string, nextFindingNumber: number) => void;
   /**
@@ -176,7 +180,36 @@ const OVERVIEW_INDEX = 0;
  */
 const PENDING_STUDY = '';
 
-const EMPTY_SESSION: StudySession = { findings: [], activeFindingId: null, baseFindingNumber: 1 };
+const EMPTY_SESSION: StudySession = { findings: [], activeFindingId: null, nextLesionNumber: 1 };
+
+/**
+ * Applies a finding number CreateReport sent (CreateReport#140) to a
+ * session, renumbering whichever lesions have not been captured yet.
+ *
+ * Those are the only ones safe to touch: CreateReport has never heard of
+ * them, so nothing downstream can disagree about their number. A lesion
+ * that already has an image has already reached CreateReport, which
+ * assigned *it* a number of its own via `createLesion` the moment that
+ * image arrived — moving it here would just be wrong a different way.
+ * This closes a real race, not an edge case: CreateReport#141 creates
+ * Finding 1 the instant a study opens, which can beat CR_HELLO's second
+ * message here (Igor, CreateReport/Viewers#7 review).
+ *
+ * Order is preserved among the renumbered ones — `findings` is append-only,
+ * so array order already is creation order.
+ */
+const applyFindingNumber = (session: StudySession, base: number): StudySession => {
+  let next = base;
+  const findings = session.findings.map(f => {
+    if (f.kind !== 'lesion' || f.imageCount > 0) {
+      return f;
+    }
+    const renumbered = { ...f, index: next };
+    next += 1;
+    return renumbered;
+  });
+  return { ...session, findings, nextLesionNumber: next };
+};
 
 /** The key whose session the mirrored `findings` / `activeFindingId` show. */
 const activeKey = (state: CreateReportFindingsState): string =>
@@ -218,10 +251,9 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         // count rather than always 1 (CreateReport#140): the prior's
         // findings are not the current study's, so each starts at its own
         // base.
-        const lesionCount = session.findings.filter(f => f.kind === 'lesion').length;
         const finding: Finding = {
           id: nextId(),
-          index: session.baseFindingNumber + lesionCount,
+          index: session.nextLesionNumber,
           kind: 'lesion' as FindingKind,
           imageCount: 0,
           imageKeys: [],
@@ -234,6 +266,7 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
               ...sessionOf(current, key),
               findings: [...sessionOf(current, key).findings, finding],
               activeFindingId: finding.id,
+              nextLesionNumber: sessionOf(current, key).nextLesionNumber + 1,
             }),
           false,
           'createReportFindings/createLesion'
@@ -339,10 +372,11 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
 
         set(
           current =>
-            commit(current, studyInstanceUid, {
-              ...sessionOf(current, studyInstanceUid),
-              baseFindingNumber: nextFindingNumber,
-            }),
+            commit(
+              current,
+              studyInstanceUid,
+              applyFindingNumber(sessionOf(current, studyInstanceUid), nextFindingNumber)
+            ),
           false,
           'createReportFindings/setBaseFindingNumber'
         );
@@ -369,10 +403,8 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
               // by contrast, never carries one: nothing addresses it by uid.
               const { [studyInstanceUid]: queuedBase, ...remainingPending } =
                 state.pendingBaseNumbers;
-              const adopted: StudySession = {
-                ...pending,
-                baseFindingNumber: queuedBase ?? pending.baseFindingNumber,
-              };
+              const adopted: StudySession =
+                queuedBase === undefined ? pending : applyFindingNumber(pending, queuedBase);
               return {
                 byStudy: { ...rest, [studyInstanceUid]: adopted },
                 pendingBaseNumbers: remainingPending,
@@ -402,7 +434,7 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
           state => {
             const { [studyInstanceUid]: queuedBase, ...remainingPending } =
               state.pendingBaseNumbers;
-            const fresh: StudySession = { ...EMPTY_SESSION, baseFindingNumber: queuedBase ?? 1 };
+            const fresh: StudySession = { ...EMPTY_SESSION, nextLesionNumber: queuedBase ?? 1 };
             const session = seen ?? fresh;
             return {
               studyInstanceUid,

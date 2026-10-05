@@ -427,16 +427,16 @@ describe('numbering continues from the app (CreateReport#140)', () => {
     expect(store().findings[0].index).toBe(7);
   });
 
-  it('keeps a lesion picked before the study was known, then numbers the next one from the base', () => {
+  it('renumbers a lesion picked before the study was known once the base arrives, then continues from it', () => {
+    // Nothing has been captured yet — the picked lesion has never reached
+    // CreateReport, so it is still safe to renumber (Igor, PR#7 review).
     const picked = store().createLesion();
     store().setBaseFindingNumber('1.2.3', 7);
 
     store().startStudy('1.2.3');
 
-    // The pre-existing pick is unaffected...
     expect(store().activeFindingId).toBe(picked.id);
-    expect(store().findings.find(f => f.id === picked.id)?.index).toBe(1);
-    // ...but a genuinely new one respects the base the app sent.
+    expect(store().findings.find(f => f.id === picked.id)?.index).toBe(7);
     expect(store().createLesion().index).toBe(8);
   });
 
@@ -448,13 +448,18 @@ describe('numbering continues from the app (CreateReport#140)', () => {
     expect(store().findings[0].index).toBe(1);
   });
 
-  it('updates the base for a study already open, without renumbering existing findings', () => {
+  it('renumbers an auto-created finding still uncaptured when the base arrives late', () => {
+    // CreateReport#141 creates Finding 1 the instant the study opens, which
+    // can race CR_HELLO's second message (CreateReport#140). Since no image
+    // has been sent for it, renumbering it is safe and necessary — otherwise
+    // the case ends up with two different findings both labelled "Finding 1"
+    // (Igor, PR#7 review).
     store().startStudy('1.2.3');
     const autoFirst = store().findings[0];
 
     store().setBaseFindingNumber('1.2.3', 5);
 
-    expect(store().findings.find(f => f.id === autoFirst.id)?.index).toBe(1);
+    expect(store().findings.find(f => f.id === autoFirst.id)?.index).toBe(5);
     expect(store().createLesion().index).toBe(6);
   });
 
@@ -465,6 +470,38 @@ describe('numbering continues from the app (CreateReport#140)', () => {
     store().setBaseFindingNumber('1.2.3', 6);
     store().startStudy('1.2.3');
 
+    expect(store().findings[0].index).toBe(6);
     expect(store().createLesion().index).toBe(7);
+  });
+
+  it("keeps a captured finding's number, but renumbers an uncaptured one, when the base arrives late", () => {
+    // The crux of Igor's review comment: a finding already sent to
+    // CreateReport (it has an image) must not move — CreateReport already
+    // assigned *that* finding a number of its own via createLesion(). One
+    // that never shipped is still fair game.
+    store().startStudy('1.2.3');
+    const captured = store().findings[0];
+    store().registerImage(captured.id, 'sop-1');
+    const uncaptured = store().createLesion();
+
+    store().setBaseFindingNumber('1.2.3', 5);
+
+    expect(store().findings.find(f => f.id === captured.id)?.index).toBe(1);
+    expect(store().findings.find(f => f.id === uncaptured.id)?.index).toBe(5);
+    // Continues after the renumbered one, not after the pre-rebase count —
+    // the original `base + lesionCount` formula would have skipped to 7.
+    expect(store().createLesion().index).toBe(6);
+  });
+
+  it('renumbers every uncaptured lesion in order when the base arrives late', () => {
+    store().startStudy('1.2.3');
+    const first = store().findings[0];
+    const second = store().createLesion();
+
+    store().setBaseFindingNumber('1.2.3', 10);
+
+    expect(store().findings.find(f => f.id === first.id)?.index).toBe(10);
+    expect(store().findings.find(f => f.id === second.id)?.index).toBe(11);
+    expect(store().createLesion().index).toBe(12);
   });
 });

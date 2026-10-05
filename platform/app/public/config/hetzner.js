@@ -182,11 +182,26 @@ window.config = {
       if (typeof window !== 'undefined' && window.env && window.env.CREATE_REPORT_BASE_URL) {
         return window.env.CREATE_REPORT_BASE_URL;
       }
-      // Hetzner production: viewer.create-report.com → app.create-report.com
-      if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-        return 'https://app.create-report.com';
+      if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
+        return 'http://localhost:3001'; // Local development (CreateReport dev server)
       }
-      return 'http://localhost:3001'; // Local development (CreateReport dev server)
+      // One viewer build (viewer.create-report.com) serves prod and dev alike
+      // (CreateReport#82) — its own hostname can't tell them apart, so this
+      // used to send every non-localhost handoff to prod. The page that
+      // opened the viewer can: window.open() sets document.referrer to the
+      // opener's origin unless noopener is used, which the worklist's
+      // magnifier deliberately does not (CreateReport#97).
+      if (typeof document !== 'undefined' && document.referrer) {
+        try {
+          var referrerHost = new URL(document.referrer).hostname;
+          if (referrerHost === 'dev.create-report.com') {
+            return 'https://dev.create-report.com';
+          }
+        } catch (e) {
+          // Malformed/empty referrer — fall through to the prod default.
+        }
+      }
+      return 'https://app.create-report.com'; // Default: Hetzner production
     })(),
     // Origins the CreateReport main window may answer the viewer handshake
     // from (CR_HELLO, CreateReport#97). Covers prod, staging and local dev —

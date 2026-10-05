@@ -51,6 +51,14 @@ export const findingLabel = (finding: Finding): string => {
 export interface StudySession {
   findings: Finding[];
   activeFindingId: string | null;
+  /**
+   * The index the next lesion `createLesion` adds to this study will get
+   * (CreateReport#140). 1 until CreateReport says otherwise: a case already
+   * holding findings — from the grouping board or an earlier viewer session —
+   * would otherwise have its first *viewer-session* lesion collide with one
+   * it already has, labelled identically but filed as a second, separate one.
+   */
+  nextLesionNumber: number;
 }
 
 export interface CreateReportFindingsState {
@@ -64,6 +72,12 @@ export interface CreateReportFindingsState {
    */
   byStudy: Record<string, StudySession>;
   /**
+   * A base finding number CreateReport sent for a study not yet in `byStudy`
+   * (CreateReport#140) — the handshake can resolve before OHIF reports which
+   * study is on screen. Consumed and cleared the moment that study starts.
+   */
+  pendingBaseNumbers: Record<string, number>;
+  /**
    * The active study's findings, mirrored out of `byStudy` so components can
    * keep subscribing to a plain array. Written only by `commit`.
    */
@@ -76,6 +90,14 @@ export interface CreateReportFindingsState {
   createLesion: (label?: string) => Finding;
   /** Returns the study's single overview finding, creating it on first use. */
   ensureOverview: () => Finding;
+  /**
+   * Returns the study's first numbered finding, creating it on first use.
+   *
+   * Named for the word the UI uses rather than matching `createLesion`
+   * (CreateReport#144): `lesion` survives only where it is already on the
+   * wire, and a symbol added today has no reason to inherit it.
+   */
+  ensureFirstFinding: () => Finding;
   /** Activates an existing finding. Unknown ids are ignored. */
   setActiveFinding: (id: string) => void;
   /** Records that a key image was captured against a finding. */
@@ -83,13 +105,31 @@ export interface CreateReportFindingsState {
   /** Whether this exact image is already attached to that finding. */
   hasImage: (id: string, imageKey: string) => boolean;
   /**
+   * Applies a finding number CreateReport sent for a study (CreateReport#140,
+   * CR_HELLO). A lesion that already has an image keeps its number —
+   * CreateReport has already assigned it one of its own — but one that does
+   * not is renumbered from this base, since nothing downstream can disagree
+   * about a finding CreateReport has never heard of (see `applyFindingNumber`
+   * for why this matters: CreateReport#141's auto-created Finding 1 can
+   * exist before this arrives). If the study has not started yet, the
+   * number is queued and applied once it does — `studyInstanceUid` is a
+   * case's, decided by CreateReport, so it is never the same race as the
+   * chip being used before OHIF reports its study.
+   */
+  setBaseFindingNumber: (studyInstanceUid: string, nextFindingNumber: number) => void;
+  /**
    * Points the store at a study.
    *
-   * A study seen for the first time starts with an Overview active — the first
-   * capture is usually a scout or whole-study view, not a single finding. A study seen
-   * before is *restored*, with its findings and its selection intact, because
-   * the radiologist may simply have clicked into the other viewport of a
-   * comparison and expects to come back to their work (CreateReport#129).
+   * A study seen for the first time starts on Finding 1 — the radiologist
+   * almost always begins with a finding, and starting on Overview cost one
+   * chip interaction per study at the moment they wanted to capture
+   * (CreateReport#141). Overview is still there, created the moment it is
+   * chosen, for a scout or whole-study view.
+   *
+   * A study seen before is *restored*, with its findings and its selection
+   * intact, because the radiologist may simply have clicked into the other
+   * viewport of a comparison and expects to come back to their work
+   * (CreateReport#129).
    *
    * Being told the study for the first time only adopts it: whatever was
    * already picked from the chip survives.
@@ -140,7 +180,36 @@ const OVERVIEW_INDEX = 0;
  */
 const PENDING_STUDY = '';
 
-const EMPTY_SESSION: StudySession = { findings: [], activeFindingId: null };
+const EMPTY_SESSION: StudySession = { findings: [], activeFindingId: null, nextLesionNumber: 1 };
+
+/**
+ * Applies a finding number CreateReport sent (CreateReport#140) to a
+ * session, renumbering whichever lesions have not been captured yet.
+ *
+ * Those are the only ones safe to touch: CreateReport has never heard of
+ * them, so nothing downstream can disagree about their number. A lesion
+ * that already has an image has already reached CreateReport, which
+ * assigned *it* a number of its own via `createLesion` the moment that
+ * image arrived — moving it here would just be wrong a different way.
+ * This closes a real race, not an edge case: CreateReport#141 creates
+ * Finding 1 the instant a study opens, which can beat CR_HELLO's second
+ * message here (Igor, CreateReport/Viewers#7 review).
+ *
+ * Order is preserved among the renumbered ones — `findings` is append-only,
+ * so array order already is creation order.
+ */
+const applyFindingNumber = (session: StudySession, base: number): StudySession => {
+  let next = base;
+  const findings = session.findings.map(f => {
+    if (f.kind !== 'lesion' || f.imageCount > 0) {
+      return f;
+    }
+    const renumbered = { ...f, index: next };
+    next += 1;
+    return renumbered;
+  });
+  return { ...session, findings, nextLesionNumber: next };
+};
 
 /** The key whose session the mirrored `findings` / `activeFindingId` show. */
 const activeKey = (state: CreateReportFindingsState): string =>
@@ -169,6 +238,7 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
   devtools(
     (set, get) => ({
       byStudy: {},
+      pendingBaseNumbers: {},
       findings: [],
       activeFindingId: null,
       studyInstanceUid: null,
@@ -177,12 +247,13 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         const state = get();
         const key = activeKey(state);
         const session = sessionOf(state, key);
-        // Numbered within its own study: the prior's findings are not the
-        // current study's, so each starts at 1.
-        const lesionCount = session.findings.filter(f => f.kind === 'lesion').length;
+        // Numbered within its own study, continuing from the case's own
+        // count rather than always 1 (CreateReport#140): the prior's
+        // findings are not the current study's, so each starts at its own
+        // base.
         const finding: Finding = {
           id: nextId(),
-          index: lesionCount + 1,
+          index: session.nextLesionNumber,
           kind: 'lesion' as FindingKind,
           imageCount: 0,
           imageKeys: [],
@@ -192,8 +263,10 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         set(
           current =>
             commit(current, key, {
+              ...sessionOf(current, key),
               findings: [...sessionOf(current, key).findings, finding],
               activeFindingId: finding.id,
+              nextLesionNumber: sessionOf(current, key).nextLesionNumber + 1,
             }),
           false,
           'createReportFindings/createLesion'
@@ -229,6 +302,13 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         );
 
         return finding;
+      },
+
+      ensureFirstFinding: () => {
+        const state = get();
+        const key = activeKey(state);
+        const existing = sessionOf(state, key).findings.find(f => f.kind === 'lesion');
+        return existing ?? get().createLesion();
       },
 
       setActiveFinding: (id: string) => {
@@ -271,6 +351,37 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
         return !!finding && finding.imageKeys.includes(imageKey);
       },
 
+      setBaseFindingNumber: (studyInstanceUid: string, nextFindingNumber: number) => {
+        const state = get();
+        if (!state.byStudy[studyInstanceUid]) {
+          // The study has not started yet — queue it for startStudy to pick
+          // up, the same way a pre-study chip pick is queued under
+          // PENDING_STUDY, just addressed by uid instead of by session.
+          set(
+            current => ({
+              pendingBaseNumbers: {
+                ...current.pendingBaseNumbers,
+                [studyInstanceUid]: nextFindingNumber,
+              },
+            }),
+            false,
+            'createReportFindings/queueBaseFindingNumber'
+          );
+          return;
+        }
+
+        set(
+          current =>
+            commit(
+              current,
+              studyInstanceUid,
+              applyFindingNumber(sessionOf(current, studyInstanceUid), nextFindingNumber)
+            ),
+          false,
+          'createReportFindings/setBaseFindingNumber'
+        );
+      },
+
       startStudy: (studyInstanceUid: string) => {
         const current = get().studyInstanceUid;
         if (current === studyInstanceUid) {
@@ -287,47 +398,70 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
             state => {
               const pending = sessionOf(state, PENDING_STUDY);
               const { [PENDING_STUDY]: _moved, ...rest } = state.byStudy;
+              // A base number for this exact uid (CreateReport#140) may have
+              // arrived before OHIF reported it — the pending chip session,
+              // by contrast, never carries one: nothing addresses it by uid.
+              const { [studyInstanceUid]: queuedBase, ...remainingPending } =
+                state.pendingBaseNumbers;
+              const adopted: StudySession =
+                queuedBase === undefined ? pending : applyFindingNumber(pending, queuedBase);
               return {
-                byStudy: { ...rest, [studyInstanceUid]: pending },
+                byStudy: { ...rest, [studyInstanceUid]: adopted },
+                pendingBaseNumbers: remainingPending,
                 studyInstanceUid,
-                findings: pending.findings,
-                activeFindingId: pending.activeFindingId,
+                findings: adopted.findings,
+                activeFindingId: adopted.activeFindingId,
               };
             },
             false,
             'createReportFindings/adoptStudy'
           );
-          const overview = get().ensureOverview();
+          // Whatever was picked from the chip before the study was known
+          // stays picked; this only guarantees there is something to pick.
+          const first = get().ensureFirstFinding();
           if (get().activeFindingId === null) {
-            get().setActiveFinding(overview.id);
+            get().setActiveFinding(first.id);
           }
           return;
         }
 
         // Another study became active. Its findings are restored if it has
-        // been seen; otherwise it starts with an Overview. Either way the
+        // been seen; otherwise it starts on Finding 1. Either way the
         // study being left keeps everything — clicking into the prior of a
         // comparison must not cost the radiologist the current study's work.
         const seen = get().byStudy[studyInstanceUid];
         set(
-          state => ({
-            studyInstanceUid,
-            findings: (seen ?? EMPTY_SESSION).findings,
-            activeFindingId: (seen ?? EMPTY_SESSION).activeFindingId,
-            byStudy: seen ? state.byStudy : { ...state.byStudy, [studyInstanceUid]: EMPTY_SESSION },
-          }),
+          state => {
+            const { [studyInstanceUid]: queuedBase, ...remainingPending } =
+              state.pendingBaseNumbers;
+            const fresh: StudySession = { ...EMPTY_SESSION, nextLesionNumber: queuedBase ?? 1 };
+            const session = seen ?? fresh;
+            return {
+              studyInstanceUid,
+              findings: session.findings,
+              activeFindingId: session.activeFindingId,
+              byStudy: seen ? state.byStudy : { ...state.byStudy, [studyInstanceUid]: session },
+              pendingBaseNumbers: remainingPending,
+            };
+          },
           false,
           seen ? 'createReportFindings/resumeStudy' : 'createReportFindings/startStudy'
         );
 
         if (!seen) {
-          get().setActiveFinding(get().ensureOverview().id);
+          get().setActiveFinding(get().ensureFirstFinding().id);
         }
       },
 
       resetSession: () => {
         set(
-          { byStudy: {}, findings: [], activeFindingId: null, studyInstanceUid: null },
+          {
+            byStudy: {},
+            pendingBaseNumbers: {},
+            findings: [],
+            activeFindingId: null,
+            studyInstanceUid: null,
+          },
           false,
           'createReportFindings/resetSession'
         );

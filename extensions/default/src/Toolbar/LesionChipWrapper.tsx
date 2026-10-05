@@ -25,8 +25,15 @@ import { isCreateReportConfigured } from '../utils/isCreateReportConfigured';
  * several views of one finding cost no interaction here at all — the chip is
  * only touched when the finding changes.
  *
- * Opening a study starts on Overview: the first capture is usually a scout or
- * whole-study view rather than a single finding.
+ * Opening a study starts on Finding 1 (CreateReport#141). The radiologist
+ * almost always begins with a finding, so defaulting to Overview cost one
+ * interaction per study at exactly the moment they wanted to capture.
+ * Overview stays in the menu and is created the moment it is chosen, for a
+ * scout or whole-study view.
+ *
+ * The chip therefore shows a Finding 1 the case may not have: nothing is sent
+ * until R is pressed, so a finding left empty never reaches CreateReport and
+ * no empty column appears on the board.
  *
  * The chip also owns the session boundary. It follows the active viewport, so
  * the store knows which study is on screen from the moment one is displayed

@@ -333,16 +333,17 @@ const commandsModule = ({
         // The chip normally adopts the study as soon as it is displayed; this
         // call covers the case where R is pressed before that happened, and is
         // a no-op once the uid matches. With nothing selected the capture goes
-        // to the Overview, which is where a scout or whole-study view belongs.
+        // to Finding 1 rather than the Overview (CreateReport#141): a scout or
+        // whole-study view is the exception, and is chosen from the chip.
         const studyInstanceUid = dicomContext?.dicomRef?.studyInstanceUid;
         if (studyInstanceUid) {
           useCreateReportFindingsStore.getState().startStudy(studyInstanceUid);
         }
-        const { findings, activeFindingId, ensureOverview, setActiveFinding } =
+        const { findings, activeFindingId, ensureFirstFinding, setActiveFinding } =
           useCreateReportFindingsStore.getState();
         let finding = findings.find(f => f.id === activeFindingId);
         if (!finding) {
-          finding = ensureOverview();
+          finding = ensureFirstFinding();
           setActiveFinding(finding.id);
         }
 

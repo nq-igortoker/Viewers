@@ -11,6 +11,7 @@ import ToolRowWrapper from './Toolbar/ToolRowWrapper';
 import { ToolBoxButtonGroupWrapper, ToolBoxButtonWrapper } from './Toolbar/ToolBoxWrapper';
 import { ToolButtonWrapper } from './Toolbar/ToolButtonWrapper';
 import LesionChipWrapper from './Toolbar/LesionChipWrapper';
+import FindingMicWrapper from './Toolbar/FindingMicWrapper';
 import { Toolbar } from './Toolbar';
 
 export default function getToolbarModule({ commandsManager, servicesManager }: withAppTypes) {
@@ -52,6 +53,12 @@ export default function getToolbarModule({ commandsManager, servicesManager }: w
     {
       name: 'cr.lesionChip',
       defaultComponent: props => LesionChipWrapper({ ...props, servicesManager }),
+    },
+    // CreateReport#183: the mic right of the chip — dictates a note for the
+    // finding the chip shows.
+    {
+      name: 'cr.findingMic',
+      defaultComponent: props => FindingMicWrapper(props),
     },
     {
       name: 'ohif.Toolbar',

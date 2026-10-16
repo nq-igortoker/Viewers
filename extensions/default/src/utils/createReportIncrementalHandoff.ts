@@ -26,7 +26,10 @@
 
 import {
   buildCreateReportMessage,
+  parseNoteResult,
+  type CreateReportAddNoteMessage,
   type CreateReportImagePayload,
+  type CreateReportNoteResult,
 } from './buildCreateReportMessage';
 import { useCreateReportFindingsStore } from '../stores/useCreateReportFindingsStore';
 
@@ -71,6 +74,13 @@ let currentOrigin: string | null = null;
 let appWindow: Window | null = null;
 let appOrigin: string | null = null;
 let handshakeSetup = false;
+/** A CreateReport main window answered at some point this session. */
+let everConnected = false;
+
+// Who wants to hear about the app connection and about note answers
+// (CreateReport#183) — the mic follows both.
+const connectionListeners = new Set<() => void>();
+const noteResultListeners = new Set<(result: CreateReportNoteResult) => void>();
 
 // The study images are currently being sent for — the per-session image
 // counter resets when the user moves on to another study.
@@ -102,6 +112,18 @@ export const initAppHandshake = (allowedAppOrigins: string[]): void => {
   handshakeSetup = true;
 
   window.addEventListener('message', (event: MessageEvent) => {
+    // A note's answer (CreateReport#183) — only from the window the notes
+    // went to, never from anyone else who can post to this one.
+    if (event.data?.type === 'CR_NOTE_RESULT') {
+      if (!appOrigin || event.origin !== appOrigin || event.source !== appWindow) {
+        return;
+      }
+      const result = parseNoteResult(event.data);
+      if (result) {
+        noteResultListeners.forEach(listener => listener(result));
+      }
+      return;
+    }
     if (event.data?.type !== 'CR_HELLO') {
       return;
     }
@@ -111,7 +133,9 @@ export const initAppHandshake = (allowedAppOrigins: string[]): void => {
     }
     appWindow = event.source as Window;
     appOrigin = event.origin;
+    everConnected = true;
     console.log('🤝 CreateReport main window connected:', appOrigin);
+    connectionListeners.forEach(listener => listener());
 
     const { studyInstanceUid, nextFindingNumber } = event.data as {
       studyInstanceUid?: unknown;
@@ -143,6 +167,111 @@ export const initAppHandshake = (allowedAppOrigins: string[]): void => {
 /** True when the direct channel to the CreateReport main window is usable. */
 export const hasAppConnection = (): boolean => {
   return !!appWindow && !appWindow.closed && !!appOrigin;
+};
+
+/**
+ * True once a CreateReport main window has answered this session — also after
+ * it was closed. A viewer that never had one (opened on its own) cannot send
+ * a note anywhere; one whose window went away can reconnect
+ * (`reconnectToApp`).
+ */
+export const hadAppConnection = (): boolean => everConnected;
+
+/**
+ * Whether the mic may record: there is a CreateReport window, or there was one
+ * — a recording made after it went away is kept, and Try again finds or opens
+ * it. The button and the Alt+M shortcut both ask this.
+ */
+export const canDictate = (): boolean => hasAppConnection() || hadAppConnection();
+
+/**
+ * How long `reconnectToApp` waits for the main window to answer — long enough
+ * for a login in a window it opened. The radiologist can stop waiting sooner.
+ */
+const RECONNECT_TIMEOUT_MS = 180_000;
+
+/**
+ * Finds a CreateReport main window again (CreateReport#183): the one that
+ * opened this viewer, if it is still there (reloaded, say), or a new one,
+ * opened on the app's address — which needs to happen inside the click that
+ * asked, or the browser blocks it as a popup. That is a new tab even when the
+ * radiologist has CreateReport open in another one: a window this one did not
+ * open or get opened by cannot be found by name. The viewer then announces
+ * itself to it until it answers CR_HELLO. Resolves true once connected, false
+ * when the window is closed or does not answer in time.
+ */
+export const reconnectToApp = (baseUrl: string): Promise<boolean> => {
+  if (hasAppConnection()) {
+    return Promise.resolve(true);
+  }
+  let target: Window | null = null;
+  try {
+    target = window.opener && !window.opener.closed ? window.opener : null;
+  } catch {
+    target = null;
+  }
+  if (!target) {
+    target = window.open(`${baseUrl}/`, 'createreport-app');
+  }
+  if (!target) {
+    return Promise.resolve(false);
+  }
+  const announce = () => {
+    try {
+      target!.postMessage({ type: 'CR_VIEWER_READY' }, '*');
+    } catch {
+      // Not loaded yet, or gone; the next round tries again.
+    }
+  };
+  announce();
+  const started = Date.now();
+  return new Promise(resolve => {
+    const timer = setInterval(() => {
+      if (hasAppConnection()) {
+        clearInterval(timer);
+        resolve(true);
+      } else if (target!.closed || Date.now() - started > RECONNECT_TIMEOUT_MS) {
+        clearInterval(timer);
+        resolve(false);
+      } else {
+        announce();
+      }
+    }, 700);
+  });
+};
+
+/**
+ * Called whenever the main window connects (CR_HELLO). Its closing is not an
+ * event a window can hear from another, so `hasAppConnection` is asked again
+ * whenever it matters. Returns the unsubscribe.
+ */
+export const onAppConnectionChange = (listener: () => void): (() => void) => {
+  connectionListeners.add(listener);
+  return () => connectionListeners.delete(listener);
+};
+
+/** Called with every `CR_NOTE_RESULT` from the main window (CreateReport#183). */
+export const onNoteResult = (listener: (result: CreateReportNoteResult) => void): (() => void) => {
+  noteResultListeners.add(listener);
+  return () => noteResultListeners.delete(listener);
+};
+
+/**
+ * Sends a dictation to the CreateReport main window (CreateReport#183). Notes
+ * only travel on the opener channel: the /handoff tab has no case to add them
+ * to. False when there is no such window to send to.
+ */
+export const sendNoteToApp = (message: CreateReportAddNoteMessage): boolean => {
+  if (!hasAppConnection()) {
+    return false;
+  }
+  try {
+    appWindow!.postMessage(message, appOrigin!, [message.arrayBuffer]);
+    return true;
+  } catch (error) {
+    console.error('Failed to send a note to CreateReport:', (error as Error).message);
+    return false;
+  }
 };
 
 /**
@@ -426,6 +555,11 @@ export const closeAndReset = (): void => {
 export default {
   initAppHandshake,
   hasAppConnection,
+  onAppConnectionChange,
+  onNoteResult,
+  sendNoteToApp,
+  hadAppConnection,
+  reconnectToApp,
   isMobileDevice,
   shouldUseAppChannel,
   setupCRReadyListener,

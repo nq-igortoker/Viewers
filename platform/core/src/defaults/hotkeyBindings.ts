@@ -227,6 +227,14 @@ const bindings = [
     keys: ['a'],
     isEditable: true,
   },
+  {
+    // CreateReport#183: starts and stops a dictation for the finding in the
+    // chip — the same combination as the mic in CreateReport's own board.
+    commandName: 'toggleCreateReportDictation',
+    label: 'Dictate Note (CreateReport)',
+    keys: ['alt+m'],
+    isEditable: true,
+  },
 ];
 
 export default bindings;

@@ -101,3 +101,107 @@ export const buildCreateReportMessage = (
     },
   };
 };
+
+// ============================================================================
+// CR_ADD_NOTE / CR_NOTE_RESULT (CreateReport#182, #183)
+// ============================================================================
+
+/**
+ * A dictation recorded here for the finding the chip shows (CreateReport#183).
+ * The viewer has no login of its own and cannot call the app's API, so the
+ * audio goes to the CreateReport main window, which transcribes it with its
+ * own session and adds it to that finding's note. Mirrors `CrAddNoteMessage`
+ * in CreateReport's `src/types/findings.ts`.
+ */
+export interface CreateReportAddNoteMessage {
+  type: 'CR_ADD_NOTE';
+  version: 1;
+  /** This recording's id: a resend after a lost answer is added only once. */
+  clientNoteId: string;
+  finding: FindingRef;
+  /** Required: the note goes to the open case only if it shows this study. */
+  dicomRef: { studyInstanceUid: string };
+  mimeType: string;
+  arrayBuffer: ArrayBuffer;
+  durationMs: number;
+}
+
+export const buildCreateReportNoteMessage = (note: {
+  clientNoteId: string;
+  finding: FindingRef;
+  studyInstanceUid: string;
+  mimeType: string;
+  arrayBuffer: ArrayBuffer;
+  durationMs: number;
+}): CreateReportAddNoteMessage => {
+  const { id, index, kind, label } = note.finding;
+  return {
+    type: 'CR_ADD_NOTE',
+    version: 1,
+    clientNoteId: note.clientNoteId,
+    finding: { id, index, kind, ...(label === undefined ? {} : { label }) },
+    dicomRef: { studyInstanceUid: note.studyInstanceUid },
+    mimeType: note.mimeType,
+    arrayBuffer: note.arrayBuffer,
+    durationMs: Math.round(note.durationMs),
+  };
+};
+
+/** Why CreateReport did not save a note — `NoteFailure` in its contract. */
+export type NoteFailure =
+  | 'not-open-case'
+  | 'unknown-study'
+  | 'nothing-heard'
+  | 'transcription'
+  | 'rejected'
+  | 'session'
+  | 'too-long'
+  | 'failed';
+
+const NOTE_FAILURES: readonly NoteFailure[] = [
+  'not-open-case',
+  'unknown-study',
+  'nothing-heard',
+  'transcription',
+  'rejected',
+  'session',
+  'too-long',
+  'failed',
+];
+
+export type CreateReportNoteResult =
+  | { clientNoteId: string; status: 'transcribing' }
+  | { clientNoteId: string; status: 'saved'; note: string }
+  | { clientNoteId: string; status: 'failed'; reason: NoteFailure };
+
+/**
+ * A `CR_NOTE_RESULT` as it arrived, or null when it is not one. An unknown
+ * failure reason reads as `failed` — worth a retry, never a silent success.
+ */
+export const parseNoteResult = (data: unknown): CreateReportNoteResult | null => {
+  if (!data || typeof data !== 'object') {
+    return null;
+  }
+  const message = data as Record<string, unknown>;
+  if (message.type !== 'CR_NOTE_RESULT' || typeof message.clientNoteId !== 'string') {
+    return null;
+  }
+  const clientNoteId = message.clientNoteId;
+  if (message.status === 'transcribing') {
+    return { clientNoteId, status: 'transcribing' };
+  }
+  if (message.status === 'saved') {
+    return {
+      clientNoteId,
+      status: 'saved',
+      note: typeof message.note === 'string' ? message.note : '',
+    };
+  }
+  if (message.status === 'failed') {
+    const reason = NOTE_FAILURES.includes(message.reason as NoteFailure)
+      ? (message.reason as NoteFailure)
+      : 'failed';
+    return { clientNoteId, status: 'failed', reason };
+  }
+  return null;
+};

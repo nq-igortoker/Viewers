@@ -6,7 +6,15 @@ import getPTImageIdInstanceMetadata from './getPTImageIdInstanceMetadata';
 import { registerHangingProtocolAttributes } from './hangingprotocols';
 import { HotkeysManager } from '@ohif/core';
 import ReportIcon from './Components/ReportIcon';
-import { initAppHandshake } from './utils/createReportIncrementalHandoff';
+import {
+  initAppHandshake,
+  hasAppConnection,
+  onNoteResult,
+  reconnectToApp,
+  sendNoteToApp,
+} from './utils/createReportIncrementalHandoff';
+import { useCreateReportDictationStore } from './stores/useCreateReportDictationStore';
+import { useCreateReportFindingsStore } from './stores/useCreateReportFindingsStore';
 
 const metadataProvider = classes.MetadataProvider;
 
@@ -32,6 +40,17 @@ export default function init({
         ? createReportConfig.allowedAppOrigins
         : [new URL(createReportConfig.baseUrl).origin];
       initAppHandshake(allowedAppOrigins);
+      // CreateReport#183: the mic next to the chip sends its recordings over
+      // that channel, and hears back from it.
+      const dictation = useCreateReportDictationStore.getState();
+      dictation.configure({
+        send: sendNoteToApp,
+        isConnected: hasAppConnection,
+        reconnect: () => reconnectToApp(createReportConfig.baseUrl),
+        onSaved: (studyInstanceUid, findingId) =>
+          useCreateReportFindingsStore.getState().registerNote(studyInstanceUid, findingId),
+      });
+      onNoteResult(result => useCreateReportDictationStore.getState().receive(result));
     } catch (error) {
       console.warn('CreateReport handshake init failed:', error);
     }

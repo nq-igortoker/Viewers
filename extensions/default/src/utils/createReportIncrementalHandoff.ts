@@ -76,6 +76,16 @@ let appOrigin: string | null = null;
 let handshakeSetup = false;
 /** A CreateReport main window answered at some point this session. */
 let everConnected = false;
+/**
+ * The main window said, in its CR_HELLO, that it takes notes (`notes: true`,
+ * CreateReport#182). An app that predates it — or /handoff, which has no case
+ * — would leave every dictation unanswered, so the mic waits for this.
+ */
+let appTakesNotes = false;
+/** Some main window this session took notes — a kept recording can go back to one. */
+let everTookNotes = false;
+/** Counts CR_HELLOs, so a reconnect can wait for a fresh one. */
+let helloCount = 0;
 
 // Who wants to hear about the app connection and about note answers
 // (CreateReport#183) — the mic follows both.
@@ -134,6 +144,9 @@ export const initAppHandshake = (allowedAppOrigins: string[]): void => {
     appWindow = event.source as Window;
     appOrigin = event.origin;
     everConnected = true;
+    appTakesNotes = (event.data as { notes?: unknown }).notes === true;
+    everTookNotes = everTookNotes || appTakesNotes;
+    helloCount += 1;
     console.log('🤝 CreateReport main window connected:', appOrigin);
     connectionListeners.forEach(listener => listener());
 
@@ -170,19 +183,27 @@ export const hasAppConnection = (): boolean => {
 };
 
 /**
- * True once a CreateReport main window has answered this session — also after
- * it was closed. A viewer that never had one (opened on its own) cannot send
- * a note anywhere; one whose window went away can reconnect
- * (`reconnectToApp`).
+ * True when the main window that answered takes notes (`notes: true` in its
+ * CR_HELLO) and is still there — what sending a dictation needs.
  */
-export const hadAppConnection = (): boolean => everConnected;
+export const hasNotesConnection = (): boolean => hasAppConnection() && appTakesNotes;
 
 /**
- * Whether the mic may record: there is a CreateReport window, or there was one
+ * The window that answered does not take notes, and none did this session:
+ * an app older than CreateReport#182. The mic stays hidden — every dictation
+ * would end unanswered.
+ */
+export const appRefusesNotes = (): boolean => everConnected && !everTookNotes;
+
+/**
+ * Whether the mic may record: a main window that takes notes is there, or was
  * — a recording made after it went away is kept, and Try again finds or opens
  * it. The button and the Alt+M shortcut both ask this.
  */
-export const canDictate = (): boolean => hasAppConnection() || hadAppConnection();
+export const canDictate = (): boolean =>
+  // A window there that says it does not take notes (rolled back) is no
+  // place for a recording; one that went away is, as Try again finds it.
+  hasNotesConnection() || (everTookNotes && !hasAppConnection());
 
 /**
  * How long `reconnectToApp` waits for the main window to answer — long enough
@@ -191,35 +212,40 @@ export const canDictate = (): boolean => hasAppConnection() || hadAppConnection(
 const RECONNECT_TIMEOUT_MS = 180_000;
 
 /**
- * Finds a CreateReport main window again (CreateReport#183): the one that
- * opened this viewer, if it is still there (reloaded, say), or a new one,
- * opened on the app's address — which needs to happen inside the click that
- * asked, or the browser blocks it as a popup. That is a new tab even when the
- * radiologist has CreateReport open in another one: a window this one did not
- * open or get opened by cannot be found by name. The viewer then announces
- * itself to it until it answers CR_HELLO. Resolves true once connected, false
- * when the window is closed or does not answer in time.
+ * Finds a CreateReport main window that takes notes again (CreateReport#183)
+ * and resolves true once it answered CR_HELLO:
+ * - still connected, but it did not answer a note (reloaded onto its login,
+ *   still mounting): announced to again, and a fresh CR_HELLO waited for;
+ * - gone, but the window that opened this viewer is still there: the same;
+ * - no window at all: one is opened — inside the click that asked, or the
+ *   browser blocks it as a popup — on the address of the app that answered
+ *   before (`baseUrl` only if none ever did), so a recording from a dev
+ *   session goes back to dev. That is a new tab even when the radiologist
+ *   has CreateReport open in another one: a window this one neither opened
+ *   nor was opened by cannot be found by name.
+ * False when the window is closed, does not answer in time, or answers
+ * without `notes: true` (rolled back to an older app) — no point waiting.
  */
 export const reconnectToApp = (baseUrl: string): Promise<boolean> => {
-  if (hasAppConnection()) {
-    return Promise.resolve(true);
-  }
-  let target: Window | null = null;
-  try {
-    target = window.opener && !window.opener.closed ? window.opener : null;
-  } catch {
-    target = null;
+  let target: Window | null = appWindow && !appWindow.closed ? appWindow : null;
+  if (!target) {
+    try {
+      target = window.opener && !window.opener.closed ? window.opener : null;
+    } catch (_error) {
+      target = null;
+    }
   }
   if (!target) {
-    target = window.open(`${baseUrl}/`, 'createreport-app');
+    target = window.open(`${appOrigin ?? baseUrl}/`, 'createreport-app');
   }
   if (!target) {
     return Promise.resolve(false);
   }
+  const answered = helloCount;
   const announce = () => {
     try {
       target!.postMessage({ type: 'CR_VIEWER_READY' }, '*');
-    } catch {
+    } catch (_error) {
       // Not loaded yet, or gone; the next round tries again.
     }
   };
@@ -227,9 +253,9 @@ export const reconnectToApp = (baseUrl: string): Promise<boolean> => {
   const started = Date.now();
   return new Promise(resolve => {
     const timer = setInterval(() => {
-      if (hasAppConnection()) {
+      if (helloCount > answered) {
         clearInterval(timer);
-        resolve(true);
+        resolve(hasNotesConnection());
       } else if (target!.closed || Date.now() - started > RECONNECT_TIMEOUT_MS) {
         clearInterval(timer);
         resolve(false);
@@ -262,7 +288,7 @@ export const onNoteResult = (listener: (result: CreateReportNoteResult) => void)
  * to. False when there is no such window to send to.
  */
 export const sendNoteToApp = (message: CreateReportAddNoteMessage): boolean => {
-  if (!hasAppConnection()) {
+  if (!hasNotesConnection()) {
     return false;
   }
   try {
@@ -558,7 +584,9 @@ export default {
   onAppConnectionChange,
   onNoteResult,
   sendNoteToApp,
-  hadAppConnection,
+  hasNotesConnection,
+  appRefusesNotes,
+  canDictate,
   reconnectToApp,
   isMobileDevice,
   shouldUseAppChannel,

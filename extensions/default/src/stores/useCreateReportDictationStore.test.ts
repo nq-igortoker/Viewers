@@ -2,6 +2,7 @@ import {
   useCreateReportDictationStore,
   canRetry,
   ACCEPT_TIMEOUT_MS,
+  SAVE_TIMEOUT_MS,
   SAVED_FLASH_MS,
   type DictationTarget,
 } from './useCreateReportDictationStore';
@@ -43,6 +44,7 @@ const target: DictationTarget = {
 let clock = 0;
 let sent: { clientNoteId: string; finding: unknown; dicomRef: unknown }[] = [];
 let connected = true;
+let appThere = true;
 let onSaved: jest.Mock;
 let reconnect: jest.Mock;
 let ids = 0;
@@ -69,6 +71,7 @@ beforeEach(() => {
   clock = 0;
   sent = [];
   connected = true;
+  appThere = true;
   ids = 0;
   onSaved = jest.fn();
   reconnect = jest.fn(() => Promise.resolve(true));
@@ -91,6 +94,7 @@ beforeEach(() => {
       return true;
     },
     isConnected: () => connected,
+    isAppThere: () => appThere,
     reconnect,
     newId: () => `note-${++ids}`,
     now: () => clock,
@@ -145,23 +149,76 @@ describe('dictation in the viewer (CreateReport#183)', () => {
     expect(store().kept).toBeNull();
   });
 
-  it('keeps the recording when no window answers, and Try again sends the same id', async () => {
+  it('keeps the recording when no window answers; Try again announces itself again, then sends the same id', async () => {
     await record(2000);
     jest.advanceTimersByTime(ACCEPT_TIMEOUT_MS);
     expect(store().status).toBe('undelivered');
     expect(store().reason).toBe('no-answer');
     expect(store().kept?.clientNoteId).toBe('note-1');
 
+    // The window is there but did not answer: it may have reloaded, so the
+    // viewer announces itself and waits for a fresh CR_HELLO first.
     store().retry();
-    expect(store().status).toBe('sending');
+    expect(reconnect).toHaveBeenCalledTimes(1);
+    expect(store().status).toBe('connecting');
     await flush();
     expect(sent.map(m => m.clientNoteId)).toEqual(['note-1', 'note-1']);
     store().receive({ clientNoteId: 'note-1', status: 'saved', note: 'x' });
     expect(store().status).toBe('saved');
   });
 
+  it('a note CreateReport took but has not finished reads as still processing, not as unanswered', async () => {
+    await record(2000);
+    store().receive({ clientNoteId: 'note-1', status: 'transcribing' });
+    jest.advanceTimersByTime(SAVE_TIMEOUT_MS);
+    expect(store().status).toBe('undelivered');
+    expect(store().reason).toBe('processing');
+    // Still connected: Try again resends the same id directly — a copy of one
+    // in progress gets its answer, not a second add.
+    store().retry();
+    await flush();
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(sent.map(m => m.clientNoteId)).toEqual(['note-1', 'note-1']);
+  });
+
+  it('a late transcribing after "still processing" puts it back on its way', async () => {
+    await record(2000);
+    store().receive({ clientNoteId: 'note-1', status: 'transcribing' });
+    jest.advanceTimersByTime(SAVE_TIMEOUT_MS);
+    expect(store().reason).toBe('processing');
+    store().receive({ clientNoteId: 'note-1', status: 'transcribing' });
+    expect(store().status).toBe('sending');
+  });
+
+  it('stopping the wait for a window that is there says it did not answer, not that it is closed', async () => {
+    await record(2000);
+    jest.advanceTimersByTime(ACCEPT_TIMEOUT_MS);
+    reconnect.mockImplementation(() => new Promise(() => {}));
+    store().retry();
+    expect(store().status).toBe('connecting');
+    store().cancelConnect();
+    expect(store().reason).toBe('no-answer');
+  });
+
+  it('a window there that no longer takes notes is said as such', async () => {
+    connected = false; // no notes connection…
+    appThere = true; // …but a window
+    await record(2000);
+    expect(store().reason).toBe('no-notes');
+    appThere = false;
+    store().discard();
+    await record(2000);
+    expect(store().reason).toBe('no-window');
+  });
+
+  it('a finding deleted since is not worth another try', () => {
+    expect(canRetry('finding-deleted')).toBe(false);
+    expect(canRetry('too-long')).toBe(true);
+  });
+
   it('with the CreateReport window gone, Try again reconnects before sending', async () => {
     connected = false;
+    appThere = false;
     await record(2000);
     expect(store().status).toBe('undelivered');
     expect(store().reason).toBe('no-window');
@@ -176,6 +233,7 @@ describe('dictation in the viewer (CreateReport#183)', () => {
 
   it('Try again opens CreateReport when there is no window, then sends', async () => {
     connected = false;
+    appThere = false;
     await record(2000);
     reconnect.mockImplementation(() => {
       connected = true;
@@ -191,6 +249,7 @@ describe('dictation in the viewer (CreateReport#183)', () => {
 
   it('waiting for CreateReport can be stopped, and a late window then changes nothing', async () => {
     connected = false;
+    appThere = false;
     await record(2000);
     let opened: (value: boolean) => void = () => {};
     reconnect.mockImplementation(() => new Promise(resolve => (opened = resolve)));

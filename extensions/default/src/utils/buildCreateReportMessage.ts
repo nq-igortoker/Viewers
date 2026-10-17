@@ -156,6 +156,7 @@ export type NoteFailure =
   | 'rejected'
   | 'session'
   | 'too-long'
+  | 'finding-deleted'
   | 'failed';
 
 const NOTE_FAILURES: readonly NoteFailure[] = [
@@ -166,6 +167,7 @@ const NOTE_FAILURES: readonly NoteFailure[] = [
   'rejected',
   'session',
   'too-long',
+  'finding-deleted',
   'failed',
 ];
 

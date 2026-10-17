@@ -9,6 +9,7 @@ import ReportIcon from './Components/ReportIcon';
 import {
   initAppHandshake,
   hasAppConnection,
+  hasNotesConnection,
   onNoteResult,
   reconnectToApp,
   sendNoteToApp,
@@ -45,7 +46,8 @@ export default function init({
       const dictation = useCreateReportDictationStore.getState();
       dictation.configure({
         send: sendNoteToApp,
-        isConnected: hasAppConnection,
+        isConnected: hasNotesConnection,
+        isAppThere: hasAppConnection,
         reconnect: () => reconnectToApp(createReportConfig.baseUrl),
         onSaved: (studyInstanceUid, findingId) =>
           useCreateReportFindingsStore.getState().registerNote(studyInstanceUid, findingId),

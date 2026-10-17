@@ -10,7 +10,9 @@ import {
 } from '../stores/useCreateReportDictationStore';
 import { useCreateReportFindingsStore, findingLabel } from '../stores/useCreateReportFindingsStore';
 import {
+  appRefusesNotes,
   canDictate,
+  hasNotesConnection,
   hasAppConnection,
   onAppConnectionChange,
 } from '../utils/createReportIncrementalHandoff';
@@ -112,6 +114,12 @@ const undeliveredText = (
       return `No case in CreateReport shows this study. Your recording (${kept}) is kept. Open the study from the CreateReport worklist and try again.`;
     case 'transcription':
       return `CreateReport could not transcribe your recording (${kept}) this time — the service is busy or failed. It is kept: try again.`;
+    case 'processing':
+      return `CreateReport took your recording (${kept}) but has not finished with it yet — it may still add it to ${finding}. Try again asks once more without adding it twice; if you discard it now, it may still appear in the note.`;
+    case 'finding-deleted':
+      return `Your recording (${kept}) was added to ${finding} before, but that finding has since been deleted in CreateReport. Discard it, or dictate again.`;
+    case 'no-notes':
+      return `This CreateReport does not take dictations from the viewer — it may have been rolled back to an older version. Your recording (${kept}) is kept.`;
     case 'no-answer':
       return `CreateReport did not answer. Your recording (${kept}) is kept. Check that CreateReport is open and try again.`;
     case 'session':
@@ -246,11 +254,14 @@ const popTitle: React.CSSProperties = {
 const popActs: React.CSSProperties = { display: 'flex', gap: 8, marginTop: 10 };
 const popBtn = btnStyle({ height: 28, padding: '0 12px' });
 
-/** Is there a CreateReport window to send to — asked again as it can close. */
-function useAppConnection(): boolean {
-  const [connected, setConnected] = useState(hasAppConnection);
+/** Follows the CreateReport window — asked again, as it can close without a word. */
+function useAppConnection(): void {
+  // What the mic shows depends on all three — a CR_HELLO can change whether
+  // the window takes notes without changing whether it is there.
+  const read = () => `${hasAppConnection()}:${hasNotesConnection()}:${appRefusesNotes()}`;
+  const [, setState] = useState(read);
   useEffect(() => {
-    const check = () => setConnected(hasAppConnection());
+    const check = () => setState(read());
     const unsubscribe = onAppConnectionChange(check);
     // A window closing is not an event another window hears.
     const poll = setInterval(check, 1500);
@@ -259,7 +270,6 @@ function useAppConnection(): boolean {
       clearInterval(poll);
     };
   }, []);
-  return connected;
 }
 
 /**
@@ -289,6 +299,7 @@ export default function FindingMicWrapper({ disabled }: { disabled?: boolean }) 
   const status = useCreateReportDictationStore(state => state.status);
   const elapsedMs = useCreateReportDictationStore(state => state.elapsedMs);
   const kept = useCreateReportDictationStore(state => state.kept);
+  const recordingFor = useCreateReportDictationStore(state => state.recordingFor);
   const reason = useCreateReportDictationStore(state => state.reason);
   const readBack = useCreateReportDictationStore(state => state.readBack);
   const micError = useCreateReportDictationStore(state => state.micError);
@@ -298,7 +309,8 @@ export default function FindingMicWrapper({ disabled }: { disabled?: boolean }) 
   const findings = useCreateReportFindingsStore(state => state.findings);
   const activeFindingId = useCreateReportFindingsStore(state => state.activeFindingId);
   const studyInstanceUid = useCreateReportFindingsStore(state => state.studyInstanceUid);
-  const connected = useAppConnection();
+  // Re-renders this as the window comes, goes and says whether it takes notes.
+  useAppConnection();
   const anchorRef = useRef<HTMLSpanElement | null>(null);
   const [showUndelivered, setShowUndelivered] = useState(true);
 
@@ -338,11 +350,15 @@ export default function FindingMicWrapper({ disabled }: { disabled?: boolean }) 
   // Recording or sending carries on even if the window went away meanwhile —
   // what it says when it ends is the delivery's business.
   const busy = status !== 'idle' && status !== 'saved';
+  // An app that does not take notes (older than CreateReport#182): no mic at
+  // all — every dictation would end unanswered.
+  if (appRefusesNotes() && !busy) {
+    return null;
+  }
   // Not available only to a viewer that never had a CreateReport window (it
   // was opened on its own). One whose window went away still records: the
   // recording is kept, and Try again finds or opens CreateReport.
-  // `connected` re-renders this as the window comes and goes.
-  const unavailable = !(connected || canDictate()) && !busy;
+  const unavailable = !canDictate() && !busy;
   const off = unavailable || !studyInstanceUid || (disabled && !busy);
 
   let content: React.ReactNode = <MicIcon />;
@@ -357,7 +373,7 @@ export default function FindingMicWrapper({ disabled }: { disabled?: boolean }) 
       color: '#fff',
       boxShadow: '0 0 0 3px rgba(239,68,68,0.30)',
     });
-    label = 'Stop recording';
+    label = `Stop recording for ${recordingFor ?? findingName}`;
     after = (
       <span
         style={{
@@ -378,7 +394,7 @@ export default function FindingMicWrapper({ disabled }: { disabled?: boolean }) 
     content = <SpinIcon />;
     style = btnStyle({ borderColor: AMBER, color: AMBER });
     label = 'Waiting for CreateReport — press to stop waiting';
-    after = <span style={{ fontSize: 12, color: TEXT2 }}>Opening CreateReport…</span>;
+    after = <span style={{ fontSize: 12, color: TEXT2 }}>Connecting to CreateReport…</span>;
   } else if (status === 'sending') {
     content = <SpinIcon />;
     label = 'Transcribing';
@@ -396,9 +412,12 @@ export default function FindingMicWrapper({ disabled }: { disabled?: boolean }) 
   if (off && status === 'idle') {
     style = { ...style, opacity: 0.38 };
   }
-  const tooltip = unavailable
-    ? 'Open this study from the CreateReport worklist to dictate'
-    : `${label} (${shortcut})`;
+  const tooltip = !unavailable
+    ? `${label} (${shortcut})`
+    : hasAppConnection()
+      ? // There, but no longer taking notes: rolled back to an older version.
+        'This CreateReport does not take dictations from the viewer'
+      : 'Open this study from the CreateReport worklist to dictate';
 
   return (
     <div
@@ -471,7 +490,7 @@ export default function FindingMicWrapper({ disabled }: { disabled?: boolean }) 
             <button
               type="button"
               style={popBtn}
-              disabled={!connected}
+              disabled={!canDictate()}
               onClick={() =>
                 toggle({
                   finding: readBack.finding,

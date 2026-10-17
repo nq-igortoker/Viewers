@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Button,
   Icons,
@@ -16,6 +16,7 @@ import {
   type Finding,
 } from '../stores/useCreateReportFindingsStore';
 import { getActiveStudyInstanceUid } from '../utils/getActiveStudyInstanceUid';
+import { useCreateReportDictationStore } from '../stores/useCreateReportDictationStore';
 import { isCreateReportConfigured } from '../utils/isCreateReportConfigured';
 
 /**
@@ -65,6 +66,20 @@ export default function LesionChipWrapper({
   const ensureOverview = useCreateReportFindingsStore(state => state.ensureOverview);
   const setActiveFinding = useCreateReportFindingsStore(state => state.setActiveFinding);
   const startStudy = useCreateReportFindingsStore(state => state.startStudy);
+  // A recording is for the finding it started on (CreateReport#183): the chip
+  // stays put until it is stopped, so the radiologist cannot go on speaking
+  // about another finding while the text goes to the first.
+  const recording = useCreateReportDictationStore(
+    state => state.status === 'recording' || state.status === 'starting'
+  );
+  // A menu already open when a recording starts (Alt+M) closes with it —
+  // for good, not only while it records.
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (recording) {
+      setMenuOpen(false);
+    }
+  }, [recording]);
 
   useEffect(() => {
     if (!servicesManager) {
@@ -113,13 +128,20 @@ export default function LesionChipWrapper({
   return (
     // h-10 matches the R button's box so the chip sits on the same baseline
     <div className="flex h-10 items-center">
-      <DropdownMenu>
+      <DropdownMenu
+        open={menuOpen && !recording}
+        onOpenChange={setMenuOpen}
+      >
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            disabled={disabled}
-            aria-label={`Active finding: ${triggerLabel}. Change or create a finding.`}
+            disabled={disabled || recording}
+            aria-label={
+              recording
+                ? `Active finding: ${triggerLabel}. Stop the recording to change it.`
+                : `Active finding: ${triggerLabel}. Change or create a finding.`
+            }
           >
             <span>{triggerLabel}</span>
             <Icons.ByName name="chevron-down" />

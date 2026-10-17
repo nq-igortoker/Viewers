@@ -53,10 +53,15 @@ export type DictationStatus =
 /**
  * Why a recording was not delivered: CreateReport's own reason, or
  * - `no-window` — there is no CreateReport window to send it to;
- * - `no-answer` — the window did not answer (closed meanwhile, or too old to
- *   know the message).
+ * - `no-answer` — the window did not say it took it (reloaded onto its login,
+ *   still mounting, closed meanwhile);
+ * - `processing` — it said so (`transcribing`) but has not finished in
+ *   `SAVE_TIMEOUT_MS`: it may still add the text, so this is not "did not
+ *   answer", and discarding now could leave it in the note anyway;
+ * - `no-notes` — a CreateReport window is there but no longer takes notes
+ *   (it answered without `notes: true`: rolled back to an older version).
  */
-export type UndeliveredReason = NoteFailure | 'no-window' | 'no-answer';
+export type UndeliveredReason = NoteFailure | 'no-window' | 'no-answer' | 'processing' | 'no-notes';
 
 /** A recording kept until CreateReport says it was saved. */
 export interface KeptRecording {
@@ -91,8 +96,10 @@ export interface DictationDeps {
   createRecorder: (stream: MediaStream) => MediaRecorder;
   /** False when there is no CreateReport window to send to. */
   send: (message: ReturnType<typeof buildCreateReportNoteMessage>) => boolean;
-  /** Whether a CreateReport window is there to send to right now. */
+  /** Whether a CreateReport window that takes notes is there right now. */
   isConnected: () => boolean;
+  /** Whether a CreateReport window is there at all — taking notes or not. */
+  isAppThere: () => boolean;
   /**
    * Finds a CreateReport window again — may open one, so it is called inside
    * the click on Try again. Resolves true once one answered.
@@ -108,6 +115,12 @@ export interface DictationState {
   status: DictationStatus;
   /** Whole seconds recorded so far, in ms. */
   elapsedMs: number;
+  /**
+   * The finding the recording in progress is for — fixed when it starts, and
+   * named on the stop button: the chip is locked meanwhile, but the viewport
+   * can still move to another study. Read while `starting` or `recording`.
+   */
+  recordingFor: string | null;
   kept: KeptRecording | null;
   reason: UndeliveredReason | null;
   readBack: ReadBack | null;
@@ -153,6 +166,7 @@ let deps: DictationDeps = {
   },
   send: () => false,
   isConnected: () => false,
+  isAppThere: () => false,
   reconnect: () => Promise.resolve(false),
   newId: defaultId,
   now: () => Date.now(),
@@ -172,6 +186,9 @@ let answerTimer: ReturnType<typeof setTimeout> | null = null;
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
 /** Which Try again a reconnect belongs to — one stopped or overtaken is ignored. */
 let connectAttempt = 0;
+
+/** Why a recording found nowhere to go: no window, or one that no longer takes notes. */
+const nowhereReason = (): UndeliveredReason => (deps.isAppThere() ? 'no-notes' : 'no-window');
 
 const clearAnswerTimer = () => {
   if (answerTimer) {
@@ -216,7 +233,7 @@ export const useCreateReportDictationStore = create<DictationState>()((set, get)
       return; // Discarded while the audio was being read.
     }
     if (!deps.send(message)) {
-      set({ status: 'undelivered', reason: 'no-window' });
+      set({ status: 'undelivered', reason: nowhereReason() });
       return;
     }
     // No word at all: the window is gone, or predates the message.
@@ -259,7 +276,13 @@ export const useCreateReportDictationStore = create<DictationState>()((set, get)
   const start = async (to: DictationTarget) => {
     cancelStart = false;
     target = to;
-    set({ status: 'starting', micError: null, readBack: null, reason: null });
+    set({
+      status: 'starting',
+      micError: null,
+      readBack: null,
+      reason: null,
+      recordingFor: to.findingName,
+    });
     let granted: MediaStream;
     try {
       granted = await deps.getUserMedia();
@@ -323,6 +346,7 @@ export const useCreateReportDictationStore = create<DictationState>()((set, get)
   return {
     status: 'idle',
     elapsedMs: 0,
+    recordingFor: null,
     kept: null,
     reason: null,
     readBack: null,
@@ -365,12 +389,16 @@ export const useCreateReportDictationStore = create<DictationState>()((set, get)
       if (!kept || status === 'sending' || status === 'connecting') {
         return;
       }
-      if (deps.isConnected()) {
+      // A window there that took the last try: sent again, the same id, so a
+      // copy of one still in progress gets its answer rather than a second add.
+      if (deps.isConnected() && get().reason !== 'no-answer') {
         void deliver();
         return;
       }
-      // No CreateReport window: found again — or opened, which has to happen
-      // here, inside the click — before the recording goes to it.
+      // No CreateReport window — or one that did not answer, so it may have
+      // reloaded and be waiting to hear from this viewer again: found again,
+      // or opened, which has to happen here, inside the click, before the
+      // recording goes to it.
       const attempt = ++connectAttempt;
       const reconnecting = deps.reconnect();
       set({ status: 'connecting', reason: null });
@@ -381,7 +409,10 @@ export const useCreateReportDictationStore = create<DictationState>()((set, get)
         if (connected) {
           void deliver();
         } else {
-          set({ status: 'undelivered', reason: 'no-window' });
+          set({
+            status: 'undelivered',
+            reason: deps.isConnected() ? 'no-answer' : nowhereReason(),
+          });
         }
       });
     },
@@ -391,7 +422,8 @@ export const useCreateReportDictationStore = create<DictationState>()((set, get)
         return;
       }
       connectAttempt++;
-      set({ status: 'undelivered', reason: 'no-window' });
+      // A window that is there just did not answer yet — not "not open".
+      set({ status: 'undelivered', reason: deps.isConnected() ? 'no-answer' : nowhereReason() });
     },
 
     discard: () => {
@@ -417,14 +449,15 @@ export const useCreateReportDictationStore = create<DictationState>()((set, get)
         // Taken: now it may take as long as a transcription takes. Also when
         // it comes after the window was given up on — CreateReport may first
         // have had to open the case — so it is on its way after all.
-        if (get().status === 'undelivered' && get().reason !== 'no-answer') {
+        const { status, reason } = get();
+        if (status === 'undelivered' && reason !== 'no-answer' && reason !== 'processing') {
           return;
         }
         set({ status: 'sending', reason: null });
         clearAnswerTimer();
         answerTimer = setTimeout(() => {
           if (get().status === 'sending' && get().kept?.clientNoteId === kept.clientNoteId) {
-            set({ status: 'undelivered', reason: 'no-answer' });
+            set({ status: 'undelivered', reason: 'processing' });
           }
         }, SAVE_TIMEOUT_MS);
         return;
@@ -474,5 +507,13 @@ if (typeof window !== 'undefined') {
   });
 }
 
-/** Whether a failure is worth sending the same recording again for. */
-export const canRetry = (reason: UndeliveredReason | null): boolean => reason !== 'rejected';
+/**
+ * Whether a failure is worth sending the same recording again for: not one
+ * CreateReport would refuse the same way — the recording cannot be
+ * transcribed, or the finding it was added to is gone. `too-long` is (after
+ * the note is shortened in CreateReport), and so is `nothing-heard`, kept for
+ * Try again as the board keeps it: a quiet start can make a short negative
+ * look like silence to the transcription.
+ */
+export const canRetry = (reason: UndeliveredReason | null): boolean =>
+  reason !== 'rejected' && reason !== 'finding-deleted';

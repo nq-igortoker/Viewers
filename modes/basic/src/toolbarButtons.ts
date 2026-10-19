@@ -653,6 +653,15 @@ const toolbarButtons: Button[] = [
     },
   },
   {
+    // CreateReport#183: dictates a note for the finding in the chip.
+    id: 'FindingMic',
+    uiType: 'cr.findingMic',
+    props: {
+      label: 'Dictate a note',
+      evaluate: 'evaluate.action',
+    },
+  },
+  {
     id: 'Layout',
     uiType: 'ohif.layoutSelector',
     props: {

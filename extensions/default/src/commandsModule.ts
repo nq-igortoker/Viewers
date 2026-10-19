@@ -33,8 +33,12 @@ import {
   getMaxImages,
   isMobileDevice,
   shouldUseAppChannel,
+  canDictate,
   type HandoffMode,
 } from './utils/createReportIncrementalHandoff';
+import { isCreateReportConfigured } from './utils/isCreateReportConfigured';
+import { useCreateReportDictationStore } from './stores/useCreateReportDictationStore';
+import { currentDictationTarget } from './Toolbar/FindingMicWrapper';
 import { getViewportDicomContext } from './utils/getViewportDicomContext';
 import { useCreateReportFindingsStore, findingLabel } from './stores/useCreateReportFindingsStore';
 
@@ -79,8 +83,8 @@ const commandsModule = ({
      */
     addDisplaySetAsLayer: ({ viewportId, displaySetInstanceUID, removeFirst = false }) => {
       if (!viewportId) {
-          const { activeViewportId } = servicesManager.services.viewportGridService.getState();
-          viewportId = activeViewportId;
+        const { activeViewportId } = servicesManager.services.viewportGridService.getState();
+        viewportId = activeViewportId;
       }
 
       if (!viewportId || !displaySetInstanceUID) {
@@ -244,6 +248,32 @@ const commandsModule = ({
      * Opens CreateReport tab on first click, then sends one image per click.
      * Uses CR_ADD_IMAGE postMessage (no API call). User generates report manually in CreateReport.
      */
+    /**
+     * Starts or stops a dictation for the finding in the chip
+     * (CreateReport#183) — the mic's keyboard shortcut. Does nothing when
+     * there is no CreateReport window to receive a note, and nothing while a
+     * recording waits for its answer or for a decision.
+     */
+    toggleCreateReportDictation: () => {
+      if (!isCreateReportConfigured()) {
+        return;
+      }
+      const dictation = useCreateReportDictationStore.getState();
+      if (dictation.status === 'recording' || dictation.status === 'starting') {
+        dictation.stop();
+        return;
+      }
+      // The button's rule: no window now is fine if there was one (the
+      // recording is kept for Try again).
+      if (!canDictate() || (dictation.status !== 'idle' && dictation.status !== 'saved')) {
+        return;
+      }
+      const target = currentDictationTarget();
+      if (target) {
+        dictation.toggle(target);
+      }
+    },
+
     generateReport: async () => {
       const { viewportGridService, uiNotificationService } = servicesManager.services;
 
@@ -944,6 +974,7 @@ const commandsModule = ({
     multimonitor: actions.multimonitor,
     promptSaveReport: actions.promptSaveReport,
     generateReport: actions.generateReport,
+    toggleCreateReportDictation: actions.toggleCreateReportDictation,
     loadStudy: actions.loadStudy,
     showContextMenu: actions.showContextMenu,
     closeContextMenu: actions.closeContextMenu,

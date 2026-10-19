@@ -88,3 +88,100 @@ describe('initAppHandshake — finding numbering (CreateReport#140)', () => {
     expect(store.getState().findings[0].index).toBe(1);
   });
 });
+
+describe('initAppHandshake — notes (CreateReport#182/#183)', () => {
+  function freshNotes() {
+    let handoff: HandoffModule;
+    jest.isolateModules(() => {
+      handoff = jest.requireActual('./createReportIncrementalHandoff');
+    });
+    return handoff!;
+  }
+  /** A CR_HELLO from a window that stays open, as the app's would. */
+  function hello(
+    data: Record<string, unknown>,
+    source: { postMessage: jest.Mock; closed: boolean }
+  ) {
+    const event = new MessageEvent('message', {
+      data: { type: 'CR_HELLO', ...data },
+      origin: ALLOWED_ORIGIN,
+    });
+    Object.defineProperty(event, 'source', { value: source });
+    window.dispatchEvent(event);
+  }
+
+  it('a window that says notes: true can take a dictation', () => {
+    const h = freshNotes();
+    h.initAppHandshake([ALLOWED_ORIGIN]);
+    expect(h.canDictate()).toBe(false);
+    expect(h.appRefusesNotes()).toBe(false); // nobody answered yet: greyed, not hidden
+    hello({ notes: true }, { postMessage: jest.fn(), closed: false });
+    expect(h.hasNotesConnection()).toBe(true);
+    expect(h.canDictate()).toBe(true);
+    expect(h.appRefusesNotes()).toBe(false);
+  });
+
+  it('a window that does not say so (an older app) leaves the mic hidden', () => {
+    const h = freshNotes();
+    h.initAppHandshake([ALLOWED_ORIGIN]);
+    hello({}, { postMessage: jest.fn(), closed: false });
+    expect(h.hasAppConnection()).toBe(true);
+    expect(h.hasNotesConnection()).toBe(false);
+    expect(h.appRefusesNotes()).toBe(true);
+    expect(h.canDictate()).toBe(false);
+  });
+
+  it('once a window took notes, a recording may still be made after it went away', () => {
+    const h = freshNotes();
+    h.initAppHandshake([ALLOWED_ORIGIN]);
+    const app = { postMessage: jest.fn(), closed: false };
+    hello({ notes: true }, app);
+    app.closed = true;
+    expect(h.hasNotesConnection()).toBe(false);
+    expect(h.canDictate()).toBe(true);
+  });
+
+  it('a window that took notes and then says it does not (rolled back) greys the mic', () => {
+    const h = freshNotes();
+    h.initAppHandshake([ALLOWED_ORIGIN]);
+    const app = { postMessage: jest.fn(), closed: false };
+    hello({ notes: true }, app);
+    hello({}, app);
+    expect(h.canDictate()).toBe(false);
+    expect(h.appRefusesNotes()).toBe(false); // took notes once: greyed, not hidden
+  });
+
+  it('reconnecting to a window that is still there waits for a fresh CR_HELLO', async () => {
+    jest.useFakeTimers();
+    const h = freshNotes();
+    h.initAppHandshake([ALLOWED_ORIGIN]);
+    const app = { postMessage: jest.fn(), closed: false };
+    hello({ notes: true }, app);
+    let done: boolean | null = null;
+    void h.reconnectToApp('https://unused.example').then(value => (done = value));
+    expect(app.postMessage).toHaveBeenCalledWith({ type: 'CR_VIEWER_READY' }, '*');
+    jest.advanceTimersByTime(2000);
+    await Promise.resolve();
+    expect(done).toBeNull(); // connected, but no fresh answer yet
+    hello({ notes: true }, app);
+    jest.advanceTimersByTime(700);
+    await Promise.resolve();
+    expect(done).toBe(true);
+    jest.useRealTimers();
+  });
+
+  it('a fresh CR_HELLO without notes ends the reconnect at once', async () => {
+    jest.useFakeTimers();
+    const h = freshNotes();
+    h.initAppHandshake([ALLOWED_ORIGIN]);
+    const app = { postMessage: jest.fn(), closed: false };
+    hello({ notes: true }, app);
+    let done: boolean | null = null;
+    void h.reconnectToApp('https://unused.example').then(value => (done = value));
+    hello({}, app);
+    jest.advanceTimersByTime(700);
+    await Promise.resolve();
+    expect(done).toBe(false);
+    jest.useRealTimers();
+  });
+});

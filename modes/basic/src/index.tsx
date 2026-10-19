@@ -218,6 +218,7 @@ export const toolbarSections = {
     'Capture',
     'GenerateReport',
     'LesionChip',
+    'FindingMic',
     'Layout',
     'Crosshairs',
     'MoreTools',

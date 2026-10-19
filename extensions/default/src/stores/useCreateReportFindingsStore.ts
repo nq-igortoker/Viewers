@@ -28,6 +28,12 @@ export interface Finding extends FindingRef {
    * Capturing it for a *different* finding stays allowed.
    */
   imageKeys: string[];
+  /**
+   * A note dictated for it has reached CreateReport (CreateReport#183), which
+   * created the finding for it if it had none — so, like one with an image,
+   * it has a number of its own there and is never renumbered here.
+   */
+  noted?: boolean;
 }
 
 /**
@@ -104,6 +110,12 @@ export interface CreateReportFindingsState {
   registerImage: (id: string, imageKey?: string) => void;
   /** Whether this exact image is already attached to that finding. */
   hasImage: (id: string, imageKey: string) => boolean;
+  /**
+   * Records that a note dictated for a finding was saved in CreateReport
+   * (CreateReport#183). Names the study, not the active one: the answer can
+   * come back after the radiologist clicked into another viewport.
+   */
+  registerNote: (studyInstanceUid: string, id: string) => void;
   /**
    * Applies a finding number CreateReport sent for a study (CreateReport#140,
    * CR_HELLO). A lesion that already has an image keeps its number —
@@ -201,7 +213,8 @@ const EMPTY_SESSION: StudySession = { findings: [], activeFindingId: null, nextL
 const applyFindingNumber = (session: StudySession, base: number): StudySession => {
   let next = base;
   const findings = session.findings.map(f => {
-    if (f.kind !== 'lesion' || f.imageCount > 0) {
+    // Captured or dictated for: CreateReport knows it, with a number of its own.
+    if (f.kind !== 'lesion' || f.imageCount > 0 || f.noted) {
       return f;
     }
     const renumbered = { ...f, index: next };
@@ -342,6 +355,25 @@ export const useCreateReportFindingsStore = create<CreateReportFindingsState>()(
             }),
           false,
           'createReportFindings/registerImage'
+        );
+      },
+
+      registerNote: (studyInstanceUid: string, id: string) => {
+        // A study this session has no findings for has no finding with this id.
+        if (!(studyInstanceUid in get().byStudy)) {
+          return;
+        }
+        const key = studyInstanceUid;
+        set(
+          current =>
+            commit(current, key, {
+              ...sessionOf(current, key),
+              findings: sessionOf(current, key).findings.map(f =>
+                f.id === id ? { ...f, noted: true } : f
+              ),
+            }),
+          false,
+          'createReportFindings/registerNote'
         );
       },
 
